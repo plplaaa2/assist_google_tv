@@ -83,6 +83,10 @@ data:
 ## 문제 해결과 제거
 
 API 오류나 검색 결과 없음은 액션 오류로 표시됩니다. API 사용량과 권한은 Google Cloud에서 확인합니다.
+API 오류에는 HTTP 상태와 허용된 사유 코드만 표시합니다. 키·요청 URL·응답 원문은 표시하지 않습니다.
+예를 들어 `HTTP 400 (reason: invalidFilters)`는 요청 필터를, `API_KEY_INVALID`는 키 유효성을 확인해야 합니다.
+`SERVICE_DISABLED`는 API 활성화 상태, `quotaExceeded`는 API 사용량 한도를 확인합니다.
+알 수 없는 코드나 JSON이 아닌 응답은 `reason: UNKNOWN`으로 표시합니다.
 파일 업데이트 후 HA를 재시작합니다. 통합 엔트리 제거 시 런타임 자격 정보가 제거됩니다.
 코드 제거는 HACS 또는 수동 설치 폴더 삭제 후 재시작으로 진행합니다.
 프런트엔드 파일과 미연결 `options_flow.py`는 보존했습니다. 활성 옵션 흐름은 `config_flow.py`에 있습니다.

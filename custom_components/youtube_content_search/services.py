@@ -268,6 +268,39 @@ def _require_api_key(hass: HomeAssistant) -> str:
     return api_key
 
 
+# Only known constant codes may enter errors; related: tests/test_service_only.py and README.md.
+_SAFE_API_ERROR_CODES = frozenset({
+    "API_KEY_INVALID", "API_KEY_SERVICE_BLOCKED", "API_KEY_HTTP_REFERRER_BLOCKED",
+    "API_KEY_IP_ADDRESS_BLOCKED", "API_KEY_ANDROID_APP_BLOCKED", "API_KEY_IOS_APP_BLOCKED",
+    "SERVICE_DISABLED", "BILLING_DISABLED", "CONSUMER_INVALID",
+    "INVALID_ARGUMENT", "PERMISSION_DENIED", "UNAUTHENTICATED", "RESOURCE_EXHAUSTED",
+    "badRequest", "keyInvalid", "accessNotConfigured", "forbidden", "quotaExceeded",
+    "dailyLimitExceeded", "rateLimitExceeded", "incompatibleParameters", "invalidFilters",
+    "invalidPageToken", "missingRequiredParameter", "unexpectedParameter", "invalidValue",
+    "invalidPart", "unexpectedPart", "unknownPart", "invalidSearchFilter",
+})
+
+
+def _safe_api_error_codes(payload) -> str:
+    """Read structured reasons while discarding messages, metadata and unknown strings."""
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return "UNKNOWN"
+    codes = []
+    for field in ("details", "errors"):
+        entries = error.get(field, [])
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            reason = entry.get("reason") if isinstance(entry, dict) else None
+            if isinstance(reason, str) and reason in _SAFE_API_ERROR_CODES and reason not in codes:
+                codes.append(reason)
+    status = error.get("status")
+    if isinstance(status, str) and status in _SAFE_API_ERROR_CODES and status not in codes:
+        codes.append(status)
+    return ", ".join(codes) if codes else "UNKNOWN"
+
+
 async def _async_youtube_request(hass: HomeAssistant, resource: str, params: dict) -> dict:
     """Request API data without exposing credential-bearing URLs in errors."""
     params = {**params, "key": _require_api_key(hass)}
@@ -278,7 +311,15 @@ async def _async_youtube_request(hass: HomeAssistant, resource: str, params: dic
             params=params, timeout=aiohttp.ClientTimeout(total=30),
         ) as response:
             if response.status != 200:
-                raise HomeAssistantError(f"YouTube API returned HTTP {response.status}")
+                # Parse only approved reason codes; never expose response text or request URLs.
+                try:
+                    payload = await response.json()
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    payload = None
+                reasons = _safe_api_error_codes(payload)
+                raise HomeAssistantError(
+                    f"YouTube API returned HTTP {response.status} (reason: {reasons})"
+                ) from None
             return await response.json()
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         raise HomeAssistantError("Unable to retrieve YouTube data") from None

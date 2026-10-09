@@ -205,7 +205,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(error.exception.__cause__)
 
     async def test_http_error(self):
-        response = SimpleNamespace(status=403)
+        response = SimpleNamespace(status=403, json=AsyncMock(return_value={}))
         context = SimpleNamespace()
         class ResponseContext:
             async def __aenter__(self):
@@ -215,6 +215,49 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.session = SimpleNamespace(get=Mock(return_value=ResponseContext()))
         with self.assertRaisesRegex(HAError, "HTTP 403"):
             await services._async_youtube_request(self.hass, "search", {})
+
+    # Check structured Google errors and redaction without real credentials or requests.
+    async def test_api_error_reasons_and_sensitive_data_omitted(self):
+        sensitive = self.entry.data["api_key"]
+        cases = [
+            ({"error": {"errors": [{"reason": "invalidFilters"}]}}, "invalidFilters"),
+            ({"error": {"details": [{"reason": "API_KEY_INVALID"}], "status": "INVALID_ARGUMENT"}}, "API_KEY_INVALID, INVALID_ARGUMENT"),
+            ({"error": {"details": [{"reason": "SERVICE_DISABLED"}]}}, "SERVICE_DISABLED"),
+            ({"error": {"errors": [{"reason": "quotaExceeded"}]}}, "quotaExceeded"),
+            ({"error": {"message": sensitive, "errors": [{"reason": sensitive}], "status": sensitive}}, "UNKNOWN"),
+            ({"error": {"errors": [None, {"reason": []}], "details": "invalid"}}, "UNKNOWN"),
+            ([], "UNKNOWN"),
+        ]
+        for payload, expected in cases:
+            with self.subTest(expected=expected):
+                if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+                    payload["error"]["message"] = sensitive
+                    payload["error"]["metadata"] = {"url": f"https://example.invalid/?key={sensitive}"}
+                response = SimpleNamespace(status=400, json=AsyncMock(return_value=payload))
+                class ResponseContext:
+                    async def __aenter__(self):
+                        return response
+                    async def __aexit__(self, *args):
+                        return False
+                self.hass.session = SimpleNamespace(get=Mock(return_value=ResponseContext()))
+                with self.assertRaises(HAError) as error:
+                    await services._async_youtube_request(self.hass, "search", {})
+                self.assertEqual(str(error.exception), f"YouTube API returned HTTP 400 (reason: {expected})")
+                self.assertNotIn(sensitive, str(error.exception))
+                self.assertNotIn("https://", str(error.exception))
+
+    async def test_non_json_api_error_keeps_http_status(self):
+        response = SimpleNamespace(status=400, json=AsyncMock(side_effect=ValueError("response omitted")))
+        class ResponseContext:
+            async def __aenter__(self):
+                return response
+            async def __aexit__(self, *args):
+                return False
+        self.hass.session = SimpleNamespace(get=Mock(return_value=ResponseContext()))
+        with self.assertRaises(HAError) as error:
+            await services._async_youtube_request(self.hass, "search", {})
+        self.assertEqual(str(error.exception), "YouTube API returned HTTP 400 (reason: UNKNOWN)")
+        self.assertIsNone(error.exception.__cause__)
 
     async def test_config_flow_and_options_empty_input(self):
         flow = flows.YouTubeConfigFlow()
