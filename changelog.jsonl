@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-07-11T22:15:46+09:00",
+  "version": "1.0.0",
+  "entry_type": "fix",
+  "title": "YouTube Content Search 패널 연결 문제 해결 및 캐시 버전 도입",
+  "description": "",
+  "changes": [
+    {
+      "file": "custom_components/youtube_content_search/__init__.py",
+      "change_type": "add",
+      "description": "Static Path 등록 추가 - private_hacs 패턴 구현 (hass.http.async_register_static_paths)"
+    },
+    {
+      "file": "custom_components/youtube_content_search/__init__.py",
+      "change_type": "add",
+      "description": "캐시 버전 시스템 도입 (파일 수정 시간 mtime 기반, v{mtime} 형식) - HACS 업데이트 시 캐시 자동 무효화"
+    },
+    {
+      "file": "custom_components/youtube_content_search/__init__.py",
+      "change_type": "add",
+      "description": "panel.js 파일 생성 로직 추가 (inline JS를 파일로 변환하여 외부에서 로드)"
+    },
+    {
+      "file": "frontend/panel.html",
+      "change_type": "modify",
+      "description": "script 태그 경로 수정 - /local/custom_components/... → /youtube_content_search/js/panel.js?_={cache_version}"
+    },
+    {
+      "file": "frontend/js/panel.js",
+      "change_type": "create",
+      "description": "새 파일 생성 - private_hacs panel.py의 _write_panel_js_sync() 패턴 구현 (fetch + HTML 파싱 + 컴포넌트 정의)"
+    }
+  ],
+  "issues_fixed": [
+    "사이드바에 아이콘은 나왔는데 주소가 https://local로 나오고 연결이 안됨",
+    "HACS 자동 /local/... 경로 사용으로 인한 커스텀 Static Path 무시 문제"
+  ]
+}
