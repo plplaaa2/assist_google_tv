@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import tempfile
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -44,6 +45,22 @@ def entity_id(value):
     return value
 
 
+# File-backed Store double verifies restart semantics; related: playlist_store.py.
+class FileStore:
+    def __init__(self, hass, version, key, **kwargs):
+        self.path = Path(hass.storage_dir) / key
+
+    async def async_load(self):
+        await asyncio.sleep(0)
+        return json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else None
+
+    async def async_save(self, data):
+        await asyncio.sleep(0)
+        pending = self.path.with_suffix(".tmp")
+        pending.write_text(json.dumps(data), encoding="utf-8")
+        pending.replace(self.path)
+
+
 # Stub only HA interfaces; aiohttp and voluptuous remain real dependencies.
 modules = {
     "homeassistant": {},
@@ -53,6 +70,7 @@ modules = {
     "homeassistant.helpers": {},
     "homeassistant.helpers.config_validation": {"string": vol.All(str), "entity_id": entity_id},
     "homeassistant.helpers.aiohttp_client": {"async_get_clientsession": lambda hass: hass.session},
+    "homeassistant.helpers.storage": {"Store": FileStore},
 }
 for name, attributes in modules.items():
     module = ModuleType(name)
@@ -83,10 +101,13 @@ class Registry:
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        self.storage_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.storage_dir.cleanup)
         self.states = {}
-        self.hass = SimpleNamespace(data={}, services=Registry(), states=SimpleNamespace(
+        self.hass = SimpleNamespace(data={}, storage_dir=self.storage_dir.name, services=Registry(), states=SimpleNamespace(
             get=self.states.get,
-            async_set=lambda name, state, attrs: self.states.update({name: SimpleNamespace(attributes=attrs)}),
+            async_all=lambda: list(self.states.values()),
+            async_set=lambda name, state, attrs: self.states.update({name: SimpleNamespace(entity_id=name, attributes=attrs)}),
             async_remove=lambda name: self.states.pop(name, None),
         ))
         self.entry = SimpleNamespace(data={"api_key": uuid.uuid4().hex}, options={},
@@ -167,6 +188,89 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["errors"], {"base": "api_key_required"})
         flow._async_current_entries = lambda: [self.entry]
         self.assertEqual((await flow.async_step_user())["reason"], "single_instance_allowed")
+
+    # Discard runtime data and states, then restore only from the saved file.
+    async def _restart(self):
+        self.hass.data = {}
+        self.states.clear()
+        await integration.async_setup(self.hass, {})
+        await integration.async_setup_entry(self.hass, self.entry)
+
+    async def test_persist_and_restore_after_restart(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
+            await self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
+        await self._restart()
+        videos = json.loads(self.states["youtube_content_search._playlist_music"].attributes["data"])
+        self.assertEqual([v["videoId"] for v in videos], ["dQw4w9WgXcQ"])
+
+    async def test_deletion_survives_restart(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
+            await self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
+        await self.hass.services.invoke("playlist_delete", {"id": "music"})
+        await self._restart()
+        self.assertFalse(self.states)
+
+    async def test_concurrent_saves_survive_restart(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
+            await asyncio.gather(*[
+                self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": [video]})
+                for video in ["dQw4w9WgXcQ", "jNQXAC9IVRw", "dQw4w9WgXcQ"]
+            ])
+        await self._restart()
+        videos = json.loads(self.states["youtube_content_search._playlist_music"].attributes["data"])
+        self.assertEqual({v["videoId"] for v in videos}, {"dQw4w9WgXcQ", "jNQXAC9IVRw"})
+
+    async def test_save_failure_retains_runtime_and_disk(self):
+        repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
+        await repo.async_merge("music", [{"videoId": "dQw4w9WgXcQ"}])
+        with patch.object(repo.store, "async_save", AsyncMock(side_effect=OSError())):
+            with self.assertRaises(HAError):
+                await repo.async_delete("music")
+        self.assertIn("youtube_content_search._playlist_music", self.states)
+        await self._restart()
+        self.assertIn("youtube_content_search._playlist_music", self.states)
+
+    async def test_silent_write_failure_detected(self):
+        repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
+        await repo.async_merge("music", [{"videoId": "dQw4w9WgXcQ"}])
+        with patch.object(repo.store, "async_save", AsyncMock()):
+            with self.assertRaises(HAError):
+                await repo.async_delete("music")
+        self.assertIn("music", repo.playlists)
+
+    async def test_legacy_states_imported_once(self):
+        await integration.async_unload_entry(self.hass, self.entry)
+        self.hass.states.async_set("youtube_content_search._playlist_legacy", "on", {
+            "data": json.dumps([{"videoId": "dQw4w9WgXcQ"}]),
+        })
+        await integration.async_setup_entry(self.hass, self.entry)
+        await self._restart()
+        self.assertIn("youtube_content_search._playlist_legacy", self.states)
+
+    async def test_invalid_storage_not_overwritten(self):
+        repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
+        await repo.store.async_save({"playlists": {"music": "invalid"}})
+        before = repo.store.path.read_bytes()
+        with self.assertRaises(HAError):
+            await self._restart()
+        self.assertEqual(repo.store.path.read_bytes(), before)
+        self.assertFalse(self.states)
+
+    async def test_reload_preserves_saved_playlists(self):
+        repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
+        await repo.async_merge("music", [{"videoId": "dQw4w9WgXcQ"}])
+        await integration.async_unload_entry(self.hass, self.entry)
+        self.assertFalse(self.states)
+        await integration.async_setup_entry(self.hass, self.entry)
+        self.assertIn("youtube_content_search._playlist_music", self.states)
+
+    async def test_stale_repository_cannot_write_after_unload(self):
+        repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
+        await integration.async_unload_entry(self.hass, self.entry)
+        await integration.async_setup_entry(self.hass, self.entry)
+        with self.assertRaises(HAError):
+            await repo.async_merge("stale", [{"videoId": "dQw4w9WgXcQ"}])
+        self.assertFalse(self.states)
 
 
 if __name__ == "__main__":

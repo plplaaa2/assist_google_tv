@@ -20,7 +20,7 @@ search_play:
 
 playlist_save:
   name: 플레이리스트에 동영상 추가
-  description: 영상 정보를 조회해 HA 내부 임시 재생목록에 저장합니다. YouTube 계정은 변경하지 않으며 HA 재시작 시 초기화됩니다.
+  description: 영상 정보를 조회해 HA 내부 재생목록에 영구 저장합니다. YouTube 계정은 변경하지 않으며 HA 재시작 후에도 복원됩니다.
   fields:
     video_ids:
       name: 영상 ID 목록
@@ -39,7 +39,7 @@ playlist_save:
 
 playlist_delete:
   name: 플레이리스트 삭제
-  description: 지정된 HA 내부 임시 재생목록을 삭제합니다. YouTube 계정은 변경하지 않습니다.
+  description: 지정된 HA 내부 재생목록을 영구 삭제합니다. YouTube 계정은 변경하지 않습니다.
   fields:
     id:
       name: 플레이리스트 ID

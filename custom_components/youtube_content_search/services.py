@@ -14,6 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall
 from .const import DOMAIN, CONF_API_KEY
+from .playlist_store import DATA_PLAYLIST_STORE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -325,7 +326,7 @@ def _normalize_video_ids(value):
 
 
 async def async_playlist_save_service(hass: HomeAssistant, call: ServiceCall):
-    """Merge videos into a transient HA playlist, without modifying YouTube."""
+    """Merge videos into a persistent HA playlist, without modifying YouTube."""
     _require_api_key(hass)
     playlist_id = _sanitize_entity_id(call.data["playlist_id"])
     if not playlist_id:
@@ -345,22 +346,24 @@ async def async_playlist_save_service(hass: HomeAssistant, call: ServiceCall):
                 "videoId": video_id, "title": snippet.get("title", ""),
                 "channel": snippet.get("channelTitle", ""), "thumbnail": thumbnail.get("url", ""),
             })
-    # Read current state after awaiting network I/O so concurrent saves merge correctly.
-    entity_id = f"{DOMAIN}._playlist_{playlist_id}"
-    state = hass.states.get(entity_id)
-    existing = _json_module.loads(state.attributes.get("data", "[]")) if state else []
-    merged = {item["videoId"]: item for item in existing}
-    merged.update({item["videoId"]: item for item in video_infos})
-    hass.states.async_set(entity_id, "on", {"data": _json_module.dumps(list(merged.values()))})
+    # Persist mutations under a shared lock; related: playlist_store.py/__init__.py.
+    playlists = hass.data.get(DOMAIN, {}).get(DATA_PLAYLIST_STORE)
+    if playlists is None:
+        raise ServiceValidationError("Playlist storage is not configured")
+    await playlists.async_merge(playlist_id, video_infos)
 
 
 async def async_playlist_delete_service(hass: HomeAssistant, call: ServiceCall):
-    """Delete a transient HA playlist, without modifying YouTube."""
+    """Delete a persistent HA playlist, without modifying YouTube."""
     _require_api_key(hass)
     playlist_id = _sanitize_entity_id(call.data["id"])
     if not playlist_id:
         raise ServiceValidationError("Playlist ID cannot be empty")
-    hass.states.async_remove(f"{DOMAIN}._playlist_{playlist_id}")
+    # Persist deletion before removing state; related: playlist_store.py.
+    playlists = hass.data.get(DOMAIN, {}).get(DATA_PLAYLIST_STORE)
+    if playlists is None:
+        raise ServiceValidationError("Playlist storage is not configured")
+    await playlists.async_delete(playlist_id)
 
 
 async def async_setup_services(hass: HomeAssistant):

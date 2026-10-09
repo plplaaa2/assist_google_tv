@@ -6,6 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 
 from .const import CONF_API_KEY, DOMAIN
+from .playlist_store import DATA_PLAYLIST_STORE, PlaylistStore
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -17,13 +18,19 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     api_key = config_entry.options.get(CONF_API_KEY, config_entry.data.get(CONF_API_KEY))
     if not isinstance(api_key, str) or not api_key.strip():
         raise ConfigEntryError("YouTube API key is required")
+    # Restore local playlists before enabling actions; related: playlist_store.py.
+    runtime = hass.data.setdefault(DOMAIN, {})
+    if DATA_PLAYLIST_STORE not in runtime:
+        playlists = PlaylistStore(hass)
+        await playlists.async_load()
+        runtime[DATA_PLAYLIST_STORE] = playlists
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
     config_entry.async_on_unload(config_entry.add_update_listener(_async_update_options))
     _LOGGER.info("YouTube Content Search services configured")
     return True
 
 
-# Apply options without reloading transient playlists; related: config_flow.py.
+# Apply options without reloading playlists; related: config_flow.py.
 async def _async_update_options(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Apply updated credentials to subsequent service calls."""
     await async_setup_entry_credentials(hass, config_entry)
@@ -44,6 +51,10 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Remove credentials; registered actions remain available with explicit errors."""
+    # Retain saved data while removing runtime states; related: playlist_store.py.
+    playlists = hass.data.get(DOMAIN, {}).get(DATA_PLAYLIST_STORE)
+    if playlists is not None:
+        await playlists.async_clear_states()
     hass.data.pop(DOMAIN, None)
     return True
 
