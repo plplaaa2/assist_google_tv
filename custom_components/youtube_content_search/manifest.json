@@ -13,5 +13,8 @@
   "integration_type": "service",
   "dependencies": [
     "media_player"
+  ],
+  "after_dependencies": [
+    "media_extractor"
   ]
 }

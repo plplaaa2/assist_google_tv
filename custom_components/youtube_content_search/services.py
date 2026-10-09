@@ -285,22 +285,37 @@ async def _async_youtube_request(hass: HomeAssistant, resource: str, params: dic
 
 
 async def async_search_play(hass: HomeAssistant, call: ServiceCall):
-    """Search for one video and play it using Google Cast."""
+    """Search for one video and delegate playback to Cast or Media extractor."""
     query = call.data["query"].strip()
     if not query:
         raise ServiceValidationError("Search query cannot be empty")
+    # Check optional playback support before spending API quota; related: manifest.json/services.yaml.
+    playback_mode = call.data.get("playback_mode", "cast")
+    if playback_mode == "media_extractor" and not hass.services.has_service("media_extractor", "play_media"):
+        raise ServiceValidationError("Set up the Media extractor integration before using this playback mode")
     data = await _async_youtube_request(hass, "search", {
         "part": "snippet", "type": "video", "maxResults": 1, "q": query,
     })
     items = data.get("items") or []
     if not items or not items[0].get("id", {}).get("videoId"):
         raise HomeAssistantError("No YouTube video found")
+    # Delegate URL extraction to HA's optional integration; related: README.md and tests/.
+    video_id = items[0]["id"]["videoId"]
+    if playback_mode == "media_extractor":
+        await hass.services.async_call(
+            "media_extractor", "play_media", {
+                "entity_id": call.data["entity_id"],
+                "media_content_type": "video",
+                "media_content_id": f"https://www.youtube.com/watch?v={video_id}",
+            }, blocking=True,
+        )
+        return
     await hass.services.async_call(
         "media_player", "play_media", {
             "entity_id": call.data["entity_id"],
             "media_content_type": "cast",
             "media_content_id": _json_module.dumps({
-                "app_name": "youtube", "media_id": items[0]["id"]["videoId"],
+                "app_name": "youtube", "media_id": video_id,
             }),
         }, blocking=True,
     )
@@ -381,6 +396,7 @@ async def async_setup_services(hass: HomeAssistant):
         "search_play": (_search_play, vol.Schema({
             vol.Required("query"): cv.string,
             vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^media_player\.")),
+            vol.Optional("playback_mode", default="cast"): vol.In(["cast", "media_extractor"]),
         })),
         "playlist_save": (_playlist_save_service, vol.Schema({
             vol.Required("playlist_id"): cv.string,

@@ -86,10 +86,11 @@ flows = importlib.import_module("custom_components.youtube_content_search.config
 class Registry:
     def __init__(self):
         self.actions = {}
+        self.external_services = set()
         self.async_call = AsyncMock()
 
     def has_service(self, domain, name):
-        return name in self.actions
+        return (domain == "youtube_content_search" and name in self.actions) or (domain, name) in self.external_services
 
     def async_register(self, domain, name, handler, schema):
         self.actions[name] = (handler, schema)
@@ -139,6 +140,44 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await integration.async_unload_entry(self.hass, self.entry)
         with self.assertRaises(HAError):
             await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "media_player.tv"})
+
+    # Test optional playback delegation without making external API or device calls.
+    async def test_media_extractor_playback(self):
+        self.hass.services.external_services.add(("media_extractor", "play_media"))
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": [{"id": {"videoId": "dQw4w9WgXcQ"}}]})):
+            await self.hass.services.invoke("search_play", {
+                "query": "music", "entity_id": "media_player.tv", "playback_mode": "media_extractor",
+            })
+        self.hass.services.async_call.assert_awaited_once_with(
+            "media_extractor", "play_media", {
+                "entity_id": "media_player.tv", "media_content_type": "video",
+                "media_content_id": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            }, blocking=True,
+        )
+
+    async def test_missing_media_extractor_skips_search(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock()) as search:
+            with self.assertRaisesRegex(HAError, "Set up the Media extractor"):
+                await self.hass.services.invoke("search_play", {
+                    "query": "music", "entity_id": "media_player.tv", "playback_mode": "media_extractor",
+                })
+            search.assert_not_awaited()
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_invalid_playback_mode_rejected(self):
+        with self.assertRaises(vol.Invalid):
+            await self.hass.services.invoke("search_play", {
+                "query": "music", "entity_id": "media_player.tv", "playback_mode": "invalid",
+            })
+
+    async def test_media_extractor_call_error_propagates(self):
+        self.hass.services.external_services.add(("media_extractor", "play_media"))
+        self.hass.services.async_call.side_effect = HAError("Playback failed")
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": [{"id": {"videoId": "dQw4w9WgXcQ"}}]})):
+            with self.assertRaisesRegex(HAError, "Playback failed"):
+                await self.hass.services.invoke("search_play", {
+                    "query": "music", "entity_id": "media_player.tv", "playback_mode": "media_extractor",
+                })
 
     async def test_input_validation(self):
         with self.assertRaises(vol.Invalid):

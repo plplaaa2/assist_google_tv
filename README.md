@@ -1,12 +1,12 @@
 # YouTube Content Search
 
-Home Assistant 서비스(액션)로 YouTube 영상을 검색해 Google Cast 기기에서 재생합니다.
+Home Assistant 서비스(액션)로 YouTube 영상을 검색해 Google Cast 또는 Media extractor로 재생합니다.
 현재 사이드바 패널과 HTTP 검색 경로는 등록하지 않습니다.
 
 ## 설치와 설정
 
 1. Google Cloud에서 YouTube Data API v3를 활성화하고 API 키를 준비합니다.
-2. HA의 Google Cast 통합을 설정하고 `media_player` 엔티티를 확인합니다.
+2. Cast 모드는 Google Cast 통합을, 일반 모드는 Media extractor 통합을 설정하고 대상 `media_player` 엔티티를 확인합니다.
 3. 수동 설치는 `custom_components/youtube_content_search` 폴더만 HA의 `/config/custom_components/youtube_content_search`로 복사합니다.
 4. HA를 재시작하고 설정 → 기기 및 서비스 → 통합 추가에서 YouTube Content Search를 선택합니다.
 5. 설정 화면에 API 키를 입력합니다. 옵션 변경은 이후 액션 호출부터 적용됩니다.
@@ -18,7 +18,8 @@ Home Assistant 서비스(액션)로 YouTube 영상을 검색해 Google Cast 기�
 
 개발자 도구 → 액션 또는 자동화/스크립트에서 호출합니다.
 영상 검색의 첫 결과를 재생합니다. 재생목록 검색은 지원하지 않습니다.
-대상은 YouTube 앱을 지원하는 Google Cast 기기여야 합니다.
+기본값인 `cast` 모드는 YouTube 앱을 지원하는 Google Cast 기기용입니다.
+기존 자동화는 재생 방식을 지정하지 않아도 동일하게 동작합니다.
 
 ```yaml
 action: youtube_content_search.search_play
@@ -26,6 +27,26 @@ data:
   query: "아이유 라이브"
   entity_id: media_player.living_room_tv
 ```
+
+### 일반 미디어 플레이어로 재생
+
+HA 설정 → 기기 및 서비스 → 통합 추가에서 Media extractor를 먼저 설정합니다.
+`playback_mode: media_extractor`를 지정하면 검색 결과 URL을 `media_extractor.play_media`에 전달합니다.
+추출된 영상 스트림을 재생하는 방식이며, 대상 기기가 해당 스트림의 형식과 코덱을 지원해야 합니다.
+`media_player` 도메인에 속해 있어도 모든 기기에서 재생 가능한 것은 아닙니다.
+현재 일반 모드는 영상(`video`)으로 전달하며, 오디오 전용 추출 옵션은 제공하지 않습니다.
+
+```yaml
+action: youtube_content_search.search_play
+data:
+  query: "아이유 라이브"
+  entity_id: media_player.living_room_tv
+  playback_mode: media_extractor
+```
+
+Media extractor 액션이 없으면 검색 전에 설정 안내 오류를 표시합니다.
+실제 스트림 추출 실패는 Media extractor의 HA 로그에서도 확인하세요.
+이 통합은 스트림 추출이나 변환 라이브러리를 직접 추가하지 않습니다.
 
 ## HA 내부 재생목록
 
@@ -75,7 +96,7 @@ python -B -m unittest discover -s tests -v
 ```
 
 테스트는 HA 인터페이스를 모의 구현하고 임시 파일로 재생목록 복원을 검증합니다.
-실제 HA Store 동작·설정 로딩·API 인증·Cast 재생은 별도 확인이 필요합니다.
+실제 HA Store 동작·설정 로딩·API 인증·Cast/Media extractor 기기 재생은 별도 확인이 필요합니다.
 외부 버전은 기존 `1.0.0`을 유지합니다.
 
 ## 공식 참고 자료
@@ -83,5 +104,6 @@ python -B -m unittest discover -s tests -v
 - [HA manifest](https://developers.home-assistant.io/docs/creating_integration_manifest/)
 - [HA 사용자 정의 통합 번역](https://developers.home-assistant.io/docs/internationalization/custom_integration/)
 - [Google Cast YouTube 재생](https://www.home-assistant.io/integrations/cast/#youtube)
+- [Media extractor](https://www.home-assistant.io/integrations/media_extractor/)
 - [YouTube 영상 메타데이터](https://developers.google.com/youtube/v3/docs/videos/list)
 - [HACS 배포 요건](https://www.hacs.xyz/docs/publish/integration/)
