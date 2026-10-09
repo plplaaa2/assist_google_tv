@@ -1,230 +1,78 @@
-# YouTube Content Search for Home Assistant
+# YouTube Content Search
 
-A custom integration for [Home Assistant](https://www.home-assistant.io/) that allows you to search for YouTube videos, create playlists, and cast them directly to supported media players (Chromecast, Nest Hub, smart TVs with Cast support) using a web UI.
+Home Assistant 서비스(액션)로 YouTube 영상을 검색해 Google Cast 기기에서 재생합니다.
+현재 사이드바 패널과 HTTP 검색 경로는 등록하지 않습니다.
 
----
+## 설치와 설정
 
-## System Architecture Diagram
+1. Google Cloud에서 YouTube Data API v3를 활성화하고 API 키를 준비합니다.
+2. HA의 Google Cast 통합을 설정하고 `media_player` 엔티티를 확인합니다.
+3. 수동 설치는 `custom_components/youtube_content_search` 폴더만 HA의 `/config/custom_components/youtube_content_search`로 복사합니다.
+4. HA를 재시작하고 설정 → 기기 및 서비스 → 통합 추가에서 YouTube Content Search를 선택합니다.
+5. 설정 화면에 API 키를 입력합니다. 옵션 변경은 이후 액션 호출부터 적용됩니다.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Home Assistant                                │
-│                                                                       │
-│  ┌──────────────────┐    Service Call      ┌───────────────────┐   │
-│  │  Web UI Panel     │ ◄───── REST API ──► │  HTTP Endpoints   │   │
-│  │ (Sidebar)         │                      │                   │   │
-│  │                  │  POST /youtube-search │  GET/POST/DELETE   │   │
-│  │  Search Videos    │  GET  /playlist-     │  - /youtube-search │   │
-│  │  Create Playlist  │     detail/{id}      │  - /playlist-      │   │
-│  │  Save/Delete VL   │                      │     save           │   │
-│  └──────────────────┘    Service Call      │  - /playlist-      │   │
-│                                             │     delete         │   │
-└──────────────┬──────────────────────────┬───┴──────────────────────┘
-               │                          │
-               ▼                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  custom_components/youtube_content_search/                           │
-│                                                                       │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  __init__.py             │  options_flow.py                     ││
-│  │  - Integration Setup     │  - API Key Configuration UI           ││
-│  │    & Migration           │  (Store pattern)                      ││
-│  └───────────┬──────────────┘                                       ││
-│              │                                                        ││
-│  ┌───────────▼──────────────┐                                       ││
-│  │  services.py             │                                       ││
-│  │                          │                                       ││
-│  │  ┌──────────────────────┤                                       ││
-│  │  │ REST API Handlers    │                                       ││
-│  │  ├─ async_handle_       │                                       ││
-│  │  │   youtube_search     │                                       ││
-│  │  ├─ async_handle_       │                                       ││
-│  │  │   playlist_detail    │                                       ││
-│  │  ├─ async_handle_       │                                       ││
-│  │  │   playlist_save      │                                       ││
-│  │  └─ async_handle_       │                                       ││
-│  │     playlist_delete     │                                       ││
-│  │                          │                                       ││
-│  │  ┌──────────────────────┤                                       ││
-│  │  │ Service Functions    │                                       ││
-│  │  ├─ async_search_play   │                                       ││
-│  │  ├─ async_playlist_     │                                       ││
-│  │  │   save_service       │                                       ││
-│  │  └─ async_playlist_     │                                       ││
-│  │      delete_service     │                                       ││
-│  │                          │                                       ││
-│  │  ┌──────────────────────┤                                       ││
-│  │  │ Helpers              │                                       ││
-│  │  ├─ _get_api_key()      │                                       ││
-│  │  └─ _sanitize_entity_id()│                                      ││
-│  └───────────┬──────────────┘                                       ││
-└──────────────┼───────────────────────────────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        YouTube Data API v3                           │
-│                                                                       │
-│  ──────────────────────────────────────────────────────              │
-│         GET /youtube/v3/search                                       │
-│         GET /youtube/v3/playlists                                    │
-│         POST /youtube/v3/playlistItems                               │
-└─────────────────────────────────────────────────────────────────────┘
-```
+키는 HA 설정 엔트리에 저장되며, 이 통합은 별도 암호화 저장을 제공하지 않습니다.
+자동화 YAML에 실제 키를 넣을 필요는 없습니다.
 
----
+## 검색 후 재생
 
-## Features
+개발자 도구 → 액션 또는 자동화/스크립트에서 호출합니다.
+영상 검색의 첫 결과를 재생합니다. 재생목록 검색은 지원하지 않습니다.
+대상은 YouTube 앱을 지원하는 Google Cast 기기여야 합니다.
 
-- 🔍 **YouTube Search**: Search for videos using the YouTube Data API v3
-- 📋 **Playlist Management**: Create, save, and delete playlists
-- 🖥️ **Web UI Panel**: Built-in sidebar panel with a modern interface
-- 🎯 **Cast Support**: Cast content directly to Chromecast, Nest Hub, or smart TVs
-- 🔒 **Secure API Key Storage**: Using Home Assistant's `Store` pattern for safe key management
-- ⚡ **Service Integration**: Works seamlessly with HA scripts and automations
-
----
-
-## Requirements
-
-| Requirement | Description |
-|-------------|-------------|
-| Python 3.9+ | Required by Home Assistant |
-| aiohttp | HTTP library dependency (declared in `requirements`) |
-| YouTube Data API Key | Free key from [Google Cloud Console](https://console.cloud.google.com/) with YouTube Data API v3 enabled |
-
----
-
-## Installation
-
-### Via HACS
-
-1. Open **HACS** → **Integrations** → **⋮** → **Custom repositories**
-2. Add repository: `plplaaa2/youtube_content_search` (URL) and `youtube_content_search` (manifest path)
-3. Click **Add**, then click the integration in **Installed** to install
-
-### Manual Installation
-
-1. Copy the entire `youtube_content_search-main/` directory to your Home Assistant configuration's `custom_components/` folder
-2. Restart Home Assistant
-3. Go to **Settings → Devices & Services** and enable YouTube Content Search
-
----
-
-## Configuration
-
-After installation, configure your API key:
-
-1. Go to **Settings → Devices & Services → YouTube Content Search**
-2. Click the **⋮** (three dots) next to the integration
-3. Select **Options**
-4. Enter your **YouTube Data API Key** and save
-
-### Where to get an API Key
-
-1. Visit [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a project or select an existing one
-3. Enable **YouTube Data API v3**
-4. Go to **Credentials** → **Create Credentials** → **API Key**
-5. Copy and paste the key into the integration settings
-
----
-
-## Usage
-
-### Web UI (Recommended)
-
-Once configured, access the web panel via:
-
-- Go to **Settings → Sidebar** or use the Home Assistant mobile app
-- Find **YouTube Content Search** in the sidebar
-- Use the search bar to find videos and playlists
-- Create and manage playlists directly from the UI
-
-### Service Calls (Automation / Script)
-
-You can also trigger actions via Home Assistant services:
-
-#### Search & Cast a Video
 ```yaml
-service: youtube_content_search.search_play
+action: youtube_content_search.search_play
 data:
-  query: "Python tutorial"
+  query: "아이유 라이브"
   entity_id: media_player.living_room_tv
 ```
 
-#### Save Videos to Playlist
+## HA 내부 임시 재생목록
+
+YouTube 계정은 변경하지 않습니다. 영상 정보를 조회해 HA 상태에 저장합니다.
+목록은 HA 재시작 시 초기화됩니다. 목록 전체 재생 액션은 제공하지 않습니다.
+목록 이름의 하이픈 등은 밑줄로 정규화되며 중복 영상은 합칩니다.
+
 ```yaml
-service: youtube_content_search.playlist_save
+action: youtube_content_search.playlist_save
 data:
-  video_ids: ["dQw4w9WgXcQ", "jNQXAC9IVRw"]
-  playlist_id: "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"
+  playlist_id: "my_music"
+  video_ids:
+    - "dQw4w9WgXcQ"
+    - "jNQXAC9IVRw"
 ```
 
-#### Delete Playlist
+`video_ids`는 YAML 목록, 쉼표 구분 문자열, JSON 배열 문자열을 받습니다.
+개발자 도구 → 상태에서 `youtube_content_search._playlist_my_music`의 `data` 속성을 확인합니다.
+
 ```yaml
-service: youtube_content_search.playlist_delete
+action: youtube_content_search.playlist_delete
 data:
-  id: "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"
+  id: "my_music"
 ```
 
----
+## 문제 해결과 제거
 
-## Project Structure
+API 오류나 검색 결과 없음은 액션 오류로 표시됩니다. API 사용량과 권한은 Google Cloud에서 확인합니다.
+파일 업데이트 후 HA를 재시작합니다. 통합 엔트리 제거 시 런타임 자격 정보가 제거됩니다.
+코드 제거는 HACS 또는 수동 설치 폴더 삭제 후 재시작으로 진행합니다.
+프런트엔드 파일과 미연결 `options_flow.py`는 보존했습니다. 활성 옵션 흐름은 `config_flow.py`에 있습니다.
 
-```
-youtube_content_search-main/
-│
-├── hacs.json                          # HACS metadata (name, manifest_version, etc.)
-├── icon.png                           # Brand icon (256×256px)
-├── logo.png                           # Brand logo
-├── LICENSE                            # License file
-├── README.md                          # This file (user guide + installation)
-└── custom_components/
-    └── youtube_content_search/        # Custom Component directory
-        │
-        ├── __init__.py                # Main setup entry point
-        │                               - HTTP route registration
-        │                               - Service registration
-        │                               - Storage initialization & migration
-        ├── const.py                   # Constants (DOMAIN, CONF_API_KEY, PANEL config)
-        ├── services.py                # Core implementation
-        │                               - REST API handlers (/youtube-search, /playlist-*)
-        │                               - Service functions (search_play, playlist_save/delete)
-        │                               - Helper functions (_get_api_key, _sanitize_entity_id)
-        ├── options_flow.py            # API key configuration UI via HA options flow
-        └── manifest.json              # Integration manifest file
+## 개발 검증
+
+Windows Python 환경에서 aiohttp와 voluptuous를 설치한 뒤 실행합니다.
+
+```powershell
+python -B -m unittest discover -s tests -v
 ```
 
----
+테스트는 HA 인터페이스를 모의 구현합니다. 실제 HA 로딩·API 인증·Cast 재생은 별도 확인이 필요합니다.
+외부 버전은 기존 `1.0.0`을 유지합니다.
 
-## Security Improvements
+## 공식 참고 자료
 
-### Entity ID Sanitization
-All playlist IDs are sanitized before being used as Home Assistant entity IDs. Special characters (hyphens, underscores, etc.) are removed to prevent security issues:
-
-```python
-# Input: "PL-abc123" → Output: "pl_abc123"
-sanitized = "".join(c.lower() for c in playlist_id if c.isalnum() or c in "_-.").strip()
-```
-
-### Secure API Key Storage
-API keys are stored using HA's `Store` pattern, which encrypts sensitive data at rest. The key is also cached in `hass.data` for immediate service access.
-
----
-
-## Support & Contribution
-
-- [GitHub Repository](https://github.com/plplaaa2/youtube_content_search)
-- [Open Issues](https://github.com/plplaaa2/youtube_content_search/issues)
-
----
-
-<div align="center">
-  <a href="https://ko-fi.com/plplaaa2"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Ko-fi Support"></a>
-</div>
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/plplaaa2)
-
----
-
-*Made with ❤️ for the Home Assistant community*
+- [HA manifest](https://developers.home-assistant.io/docs/creating_integration_manifest/)
+- [HA 사용자 정의 통합 번역](https://developers.home-assistant.io/docs/internationalization/custom_integration/)
+- [Google Cast YouTube 재생](https://www.home-assistant.io/integrations/cast/#youtube)
+- [YouTube 영상 메타데이터](https://developers.google.com/youtube/v3/docs/videos/list)
+- [HACS 배포 요건](https://www.hacs.xyz/docs/publish/integration/)

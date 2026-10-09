@@ -1,0 +1,173 @@
+"""Contract tests with HA doubles; related: config_flow.py, __init__.py, services.py."""
+import asyncio
+import importlib
+import json
+from pathlib import Path
+import re
+import sys
+from types import ModuleType, SimpleNamespace
+import unittest
+from unittest.mock import AsyncMock, Mock, patch
+import uuid
+
+import aiohttp
+import voluptuous as vol
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+
+class HAError(Exception):
+    pass
+
+
+class Flow:
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__()
+
+    def _async_current_entries(self):
+        return []
+
+    def async_create_entry(self, **kwargs):
+        return {"type": "create_entry", **kwargs}
+
+    def async_show_form(self, **kwargs):
+        return {"type": "form", **kwargs}
+
+    def async_abort(self, **kwargs):
+        return {"type": "abort", **kwargs}
+
+
+def entity_id(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", value):
+        raise vol.Invalid("Invalid entity ID")
+    return value
+
+
+# Stub only HA interfaces; aiohttp and voluptuous remain real dependencies.
+modules = {
+    "homeassistant": {},
+    "homeassistant.core": {"HomeAssistant": object, "ServiceCall": object, "callback": lambda f: f},
+    "homeassistant.config_entries": {"ConfigEntry": object, "ConfigFlow": Flow, "OptionsFlow": Flow},
+    "homeassistant.exceptions": {"HomeAssistantError": HAError, "ServiceValidationError": HAError, "ConfigEntryError": HAError},
+    "homeassistant.helpers": {},
+    "homeassistant.helpers.config_validation": {"string": vol.All(str), "entity_id": entity_id},
+    "homeassistant.helpers.aiohttp_client": {"async_get_clientsession": lambda hass: hass.session},
+}
+for name, attributes in modules.items():
+    module = ModuleType(name)
+    module.__dict__.update(attributes)
+    module.__path__ = []
+    sys.modules[name] = module
+
+integration = importlib.import_module("custom_components.youtube_content_search")
+services = importlib.import_module("custom_components.youtube_content_search.services")
+flows = importlib.import_module("custom_components.youtube_content_search.config_flow")
+
+
+class Registry:
+    def __init__(self):
+        self.actions = {}
+        self.async_call = AsyncMock()
+
+    def has_service(self, domain, name):
+        return name in self.actions
+
+    def async_register(self, domain, name, handler, schema):
+        self.actions[name] = (handler, schema)
+
+    async def invoke(self, name, data):
+        handler, schema = self.actions[name]
+        await handler(SimpleNamespace(data=schema(data)))
+
+
+class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.states = {}
+        self.hass = SimpleNamespace(data={}, services=Registry(), states=SimpleNamespace(
+            get=self.states.get,
+            async_set=lambda name, state, attrs: self.states.update({name: SimpleNamespace(attributes=attrs)}),
+            async_remove=lambda name: self.states.pop(name, None),
+        ))
+        self.entry = SimpleNamespace(data={"api_key": uuid.uuid4().hex}, options={},
+            async_on_unload=Mock(), add_update_listener=Mock())
+        await integration.async_setup(self.hass, {})
+        await integration.async_setup_entry(self.hass, self.entry)
+
+    async def test_setup_and_options_without_frontend(self):
+        self.assertEqual(len(self.hass.services.actions), 3)
+        self.entry.options = {"api_key": uuid.uuid4().hex}
+        await integration._async_update_options(self.hass, self.entry)
+        self.assertEqual(self.hass.data[services.DOMAIN]["api_key"], self.entry.options["api_key"])
+        await integration.async_setup(self.hass, {})
+        self.assertEqual(len(self.hass.services.actions), 3)
+
+    async def test_video_search_and_cast_payload(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": [{"id": {"videoId": "dQw4w9WgXcQ"}}]})) as request:
+            await self.hass.services.invoke("search_play", {"query": " music ", "entity_id": "media_player.tv"})
+        self.assertEqual(request.call_args.args[2]["type"], "video")
+        self.assertEqual(request.call_args.args[2]["q"], "music")
+        args = self.hass.services.async_call.call_args
+        self.assertEqual(json.loads(args.args[2]["media_content_id"]), {"app_name": "youtube", "media_id": "dQw4w9WgXcQ"})
+        self.assertTrue(args.kwargs["blocking"])
+
+    async def test_empty_results_and_unconfigured_actions(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
+            with self.assertRaises(HAError):
+                await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "media_player.tv"})
+        await integration.async_unload_entry(self.hass, self.entry)
+        with self.assertRaises(HAError):
+            await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "media_player.tv"})
+
+    async def test_input_validation(self):
+        with self.assertRaises(vol.Invalid):
+            await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "light.room"})
+        with self.assertRaises(HAError):
+            await self.hass.services.invoke("search_play", {"query": " ", "entity_id": "media_player.tv"})
+        with self.assertRaises(vol.Invalid):
+            await self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": "invalid"})
+
+    async def test_playlist_merge_csv_list_and_delete(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})) as request:
+            await self.hass.services.invoke("playlist_save", {"playlist_id": "my-list", "video_ids": "dQw4w9WgXcQ,dQw4w9WgXcQ"})
+            await self.hass.services.invoke("playlist_save", {"playlist_id": "my-list", "video_ids": ["jNQXAC9IVRw"]})
+        self.assertEqual(request.call_args.args[1], "videos")
+        state = self.states["youtube_content_search._playlist_my_list"]
+        self.assertEqual(len(json.loads(state.attributes["data"])), 2)
+        await self.hass.services.invoke("playlist_delete", {"id": "my-list"})
+        self.assertFalse(self.states)
+
+    async def test_network_failure_does_not_expose_url(self):
+        self.hass.session = SimpleNamespace(get=Mock(side_effect=aiohttp.ClientError("sensitive URL omitted")))
+        with self.assertRaises(HAError) as error:
+            await services._async_youtube_request(self.hass, "search", {})
+        self.assertEqual(str(error.exception), "Unable to retrieve YouTube data")
+        self.assertIsNone(error.exception.__cause__)
+
+    async def test_http_error(self):
+        response = SimpleNamespace(status=403)
+        context = SimpleNamespace()
+        class ResponseContext:
+            async def __aenter__(self):
+                return response
+            async def __aexit__(self, *args):
+                return False
+        self.hass.session = SimpleNamespace(get=Mock(return_value=ResponseContext()))
+        with self.assertRaisesRegex(HAError, "HTTP 403"):
+            await services._async_youtube_request(self.hass, "search", {})
+
+    async def test_config_flow_and_options_empty_input(self):
+        flow = flows.YouTubeConfigFlow()
+        result = await flow.async_step_user({"api_key": " "})
+        self.assertEqual(result["errors"], {"base": "api_key_required"})
+        result = await flow.async_step_user(self.entry.data)
+        self.assertEqual(result["type"], "create_entry")
+        options = flow.async_get_options_flow(self.entry)
+        result = await options.async_step_init({"api_key": " "})
+        self.assertEqual(result["errors"], {"base": "api_key_required"})
+        flow._async_current_entries = lambda: [self.entry]
+        self.assertEqual((await flow.async_step_user())["reason"], "single_instance_allowed")
+
+
+if __name__ == "__main__":
+    unittest.main()

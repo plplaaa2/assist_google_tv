@@ -6,6 +6,11 @@ import aiohttp
 import aiohttp.web
 import logging
 import urllib.parse
+import re
+import voluptuous as vol
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall
 from .const import DOMAIN, CONF_API_KEY
@@ -26,12 +31,9 @@ def _get_api_key(hass: HomeAssistant) -> Optional[str]:
 
 def _sanitize_entity_id(playlist_id: str) -> Optional[str]:
     """Sanitize playlist_id for use as an HA entity ID."""
-    sanitized = "".join(c.lower() for c in playlist_id if c.isalnum() or c in "_-.").strip()
-
-    import re
-    sanitized = re.sub(r'[^a-z0-9_.\-]', '_', sanitized)
-
-    return sanitized if sanitized else None
+    # Use valid HA object IDs; related: service playlist save/delete actions.
+    sanitized = re.sub(r"[^a-z0-9_]", "_", playlist_id.strip().lower())
+    return sanitized if sanitized.strip("_") else None
 
 
 # ──────────────────────────── REST API Handlers (HTTP Endpoints) ────────────
@@ -257,199 +259,112 @@ async def async_handle_playlist_delete(hass: HomeAssistant, request: aiohttp.web
 
 # ──────────────────────────── Service Functions (Cast Playback / Legacy Mode) ────────────
 
-async def async_search_play(hass: HomeAssistant, call: ServiceCall):
-    """Handle search_play service call - searches YouTube and starts Cast playback.
-
-    HA calls this as: await target(service_call, hass_instance)
-    So the second parameter is the HomeAssistant instance.
-    """
+# Service-only actions use HA's shared HTTP session; related: __init__.py/services.yaml.
+def _require_api_key(hass: HomeAssistant) -> str:
     api_key = _get_api_key(hass)
-    query = call.data.get("query")
-    entity_id = call.data.get("entity_id")
+    if not api_key:
+        raise ServiceValidationError("Configure YouTube Content Search before calling this action")
+    return api_key
 
-    if not query or not entity_id:
-        _LOGGER.error("Missing 'query' or 'entity_id' for search_play service.")
-        return None
 
-    encoded_query = urllib.parse.quote(query)
-    url = (
-        f"https://www.googleapis.com/youtube/v3/search?"
-        f"part=snippet&type=video,playlist&maxResults=1&q={encoded_query}&key={api_key}"
+async def _async_youtube_request(hass: HomeAssistant, resource: str, params: dict) -> dict:
+    """Request API data without exposing credential-bearing URLs in errors."""
+    params = {**params, "key": _require_api_key(hass)}
+    session = async_get_clientsession(hass)
+    try:
+        async with session.get(
+            f"https://www.googleapis.com/youtube/v3/{resource}",
+            params=params, timeout=aiohttp.ClientTimeout(total=30),
+        ) as response:
+            if response.status != 200:
+                raise HomeAssistantError(f"YouTube API returned HTTP {response.status}")
+            return await response.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        raise HomeAssistantError("Unable to retrieve YouTube data") from None
+
+
+async def async_search_play(hass: HomeAssistant, call: ServiceCall):
+    """Search for one video and play it using Google Cast."""
+    query = call.data["query"].strip()
+    if not query:
+        raise ServiceValidationError("Search query cannot be empty")
+    data = await _async_youtube_request(hass, "search", {
+        "part": "snippet", "type": "video", "maxResults": 1, "q": query,
+    })
+    items = data.get("items") or []
+    if not items or not items[0].get("id", {}).get("videoId"):
+        raise HomeAssistantError("No YouTube video found")
+    await hass.services.async_call(
+        "media_player", "play_media", {
+            "entity_id": call.data["entity_id"],
+            "media_content_type": "cast",
+            "media_content_id": _json_module.dumps({
+                "app_name": "youtube", "media_id": items[0]["id"]["videoId"],
+            }),
+        }, blocking=True,
     )
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("YouTube API error: %s", resp.status)
-                    return None
-                data = await resp.json()
 
-    except Exception as e:
-        _LOGGER.exception("Error during YouTube search response fetch: %s", e)
-        return None
-
-    items = (data.get("items") or [])
-    if len(items) == 0:
-        _LOGGER.warning("No YouTube results found for query: %s", query)
-        return None
-
-    item = items[0]
-    id_info = item.get("id", {})
-
-    media_id = None
-
-    if "videoId" in id_info:
-        media_id = id_info["videoId"]
-    elif "playlistId" in id_info:
-        media_id = id_info["playlistId"]
-    else:
-        _LOGGER.warning("No valid videoId or playlistId found in search results")
-        return None
-
-    cast_payload = {
-        "app_name": "youtube",
-        "media_id": media_id
-    }
-
-    try:
-        await hass.services.async_call(
-            "media_player",
-            "play_media",
-            {
-                "entity_id": entity_id,
-                "media_content_type": "cast",
-                "media_content_id": json.dumps(cast_payload)
-            },
-        )
-    except Exception as e:
-        _LOGGER.exception("Error calling play_media service: %s", e)
+# Normalize list/CSV/JSON inputs consistently; related: services.yaml and README.md.
+def _normalize_video_ids(value):
+    if isinstance(value, str):
+        try:
+            parsed = _json_module.loads(value)
+        except ValueError:
+            parsed = value.split(",")
+        value = parsed if isinstance(parsed, list) else value.split(",")
+    if not isinstance(value, list) or not value:
+        raise vol.Invalid("Provide a non-empty video ID list")
+    result = []
+    for video_id in value:
+        if not isinstance(video_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id.strip()):
+            raise vol.Invalid("Each YouTube video ID must contain 11 valid characters")
+        if video_id.strip() not in result:
+            result.append(video_id.strip())
+    return result
 
 
 async def async_playlist_save_service(hass: HomeAssistant, call: ServiceCall):
-    """플레이리스트에 동영상 추가 (Service 기반 - Cast/legacy 모드).
-
-    HA calls this as: await target(service_call, hass_instance)
-    """
-    api_key = _get_api_key(hass)
-    video_ids_str = call.data.get("video_ids")
-    playlist_id = call.data.get("playlist_id")
-
-    if not video_ids_str or not playlist_id:
-        _LOGGER.error("Missing required parameters for playlist_save service")
-        return None
-
-    # video_ids를 쉼표로 구분하여 파싱 (또는 JSON 배열)
-    if isinstance(video_ids_str, list):
-        video_ids = [str(v).strip() for v in video_ids_str]
-    else:
-        try:
-            video_ids = _json_module.loads(video_ids_str)
-        except (_json_module.JSONDecodeError, TypeError):
-            # 쉼표 구분으로 파싱 시도
-            video_ids = [v.strip() for v in str(video_ids_str).split(',') if v.strip()]
-
-    if not video_ids:
-        _LOGGER.error("No valid video IDs provided")
-        return None
-
-    sanitized_playlist_id = _sanitize_entity_id(str(playlist_id))
-    if not sanitized_playlist_id:
-        _LOGGER.error("Invalid playlist_id for playlist_save service: %s", playlist_id)
-        return None
-
-    try:
-        entity_id = f"youtube_content_search._playlist_{sanitized_playlist_id}"
-
-        states = hass.states.async_all()
-        playlist_state = None
-        for s in states:
-            if s.entity_id == entity_id:
-                playlist_state = s
-                break
-
-        # YouTube API를 통해 해당 영상의 스니펫 정보 가져오기 (다중 요청 병렬)
-        async def _fetch_video_info(vid):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&id={vid}&type=video&key={api_key}"
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            items = (data.get("items") or [])[:1]
-                            for item in items:
-                                thm = ""
-                                tbs = item.get("snippet", {}).get("thumbnails", {})
-                                if "medium" in tbs:
-                                    thm = tbs["medium"].get("url") or tbs.get("default", {}).get("url")
-                                return {
-                                    "videoId": vid,
-                                    "title": item.get("snippet", {}).get("title"),
-                                    "channel": item.get("snippet", {}).get("channelTitle"),
-                                    "thumbnail": thm,
-                                }
-            except Exception as e:
-                _LOGGER.debug("Error fetching video %s info: %s", vid, e)
-
-            return {"videoId": vid, "title": "", "channel": "", "thumbnail": ""}
-
-        video_infos = await asyncio.gather(*[
-            _fetch_video_info(v) for v in video_ids
-        ])
-
-        # 새 데이터 준비 (중복 제거 + 기존 유지)
-        new_videos = []
-        existing_vids = set()
-        if playlist_state:
-            try:
-                existing_attr = _json_module.loads(playlist_state.attributes.get('data', '[]'))
-                for v in (existing_attr or []):
-                    vid_key = v['videoId'] if isinstance(v, dict) else str(v).split(',')[0].strip()
-                    existing_vids.add(vid_key)
-                    new_videos.append(v)
-            except Exception as e:
-                _LOGGER.error("Error parsing playlist %s: %s", entity_id, e)
-
-        for info in video_infos:
-            if info['videoId'] not in existing_vids:
-                new_videos.append(info)
-                existing_vids.add(info['videoId'])
-
-        # 상태 업데이트 (이벤트 발생 → HA에서 UI 갱신)
-        hass.states.async_set(entity_id, 'on', {'data': _json_module.dumps(new_videos)})
-
-    except Exception as e:
-        _LOGGER.exception("Error during playlist_save service: %s", e)
+    """Merge videos into a transient HA playlist, without modifying YouTube."""
+    _require_api_key(hass)
+    playlist_id = _sanitize_entity_id(call.data["playlist_id"])
+    if not playlist_id:
+        raise ServiceValidationError("Playlist ID cannot be empty")
+    video_ids = call.data["video_ids"]
+    video_infos = []
+    for offset in range(0, len(video_ids), 50):
+        data = await _async_youtube_request(hass, "videos", {
+            "part": "snippet", "id": ",".join(video_ids[offset:offset + 50]),
+        })
+        metadata = {item["id"]: item.get("snippet", {}) for item in data.get("items", [])}
+        for video_id in video_ids[offset:offset + 50]:
+            snippet = metadata.get(video_id, {})
+            thumbnails = snippet.get("thumbnails", {})
+            thumbnail = thumbnails.get("medium", thumbnails.get("default", {}))
+            video_infos.append({
+                "videoId": video_id, "title": snippet.get("title", ""),
+                "channel": snippet.get("channelTitle", ""), "thumbnail": thumbnail.get("url", ""),
+            })
+    # Read current state after awaiting network I/O so concurrent saves merge correctly.
+    entity_id = f"{DOMAIN}._playlist_{playlist_id}"
+    state = hass.states.get(entity_id)
+    existing = _json_module.loads(state.attributes.get("data", "[]")) if state else []
+    merged = {item["videoId"]: item for item in existing}
+    merged.update({item["videoId"]: item for item in video_infos})
+    hass.states.async_set(entity_id, "on", {"data": _json_module.dumps(list(merged.values()))})
 
 
 async def async_playlist_delete_service(hass: HomeAssistant, call: ServiceCall):
-    """플레이리스트 삭제 (Service 기반 - Cast/legacy 모드).
-
-    HA calls this as: await target(service_call, hass_instance)
-    """
-    playlist_id = call.data.get("id")
-
+    """Delete a transient HA playlist, without modifying YouTube."""
+    _require_api_key(hass)
+    playlist_id = _sanitize_entity_id(call.data["id"])
     if not playlist_id:
-        _LOGGER.error("Missing required parameters for playlist_delete service")
-        return None
+        raise ServiceValidationError("Playlist ID cannot be empty")
+    hass.states.async_remove(f"{DOMAIN}._playlist_{playlist_id}")
 
-    sanitized_playlist_id = _sanitize_entity_id(str(playlist_id))
-    if not sanitized_playlist_id:
-        _LOGGER.error("Invalid playlist_id for playlist_delete service: %s", playlist_id)
-        return None
-
-    try:
-        entity_id = f"youtube_content_search._playlist_{sanitized_playlist_id}"
-        hass.states.async_remove(entity_id)
-    except Exception as e:
-        _LOGGER.warning("Failed to delete state %s: %s", entity_id, e)
-
-
-# ──────────────────────────── Setup / Unregister Helpers ───────────────────
 
 async def async_setup_services(hass: HomeAssistant):
-    """Register legacy service functions for Cast playback."""
-
+    """Register validated actions once; related: services.yaml/config_flow.py."""
     async def _search_play(call: ServiceCall):
         await async_search_play(hass, call)
 
@@ -459,15 +374,20 @@ async def async_setup_services(hass: HomeAssistant):
     async def _playlist_delete_service(call: ServiceCall):
         await async_playlist_delete_service(hass, call)
 
-    try:
-        hass.services.async_register(DOMAIN, "search_play", _search_play)
-        if not hass.services.has_service(DOMAIN, "playlist_save"):
-            hass.services.async_register(DOMAIN, "playlist_save", _playlist_save_service)
-        if not hass.services.has_service(DOMAIN, "playlist_delete"):
-            hass.services.async_register(DOMAIN, "playlist_delete", _playlist_delete_service)
-
-    except Exception as err:
-        _LOGGER.error("YouTube Content Search services registration failed: %s", err, exc_info=True)
+    actions = {
+        "search_play": (_search_play, vol.Schema({
+            vol.Required("query"): cv.string,
+            vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^media_player\.")),
+        })),
+        "playlist_save": (_playlist_save_service, vol.Schema({
+            vol.Required("playlist_id"): cv.string,
+            vol.Required("video_ids"): _normalize_video_ids,
+        })),
+        "playlist_delete": (_playlist_delete_service, vol.Schema({vol.Required("id"): cv.string})),
+    }
+    for name, (handler, schema) in actions.items():
+        if not hass.services.has_service(DOMAIN, name):
+            hass.services.async_register(DOMAIN, name, handler, schema=schema)
 
 
 async def async_unload_services(hass: HomeAssistant):
