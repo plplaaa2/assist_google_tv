@@ -25,10 +25,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         await playlists.async_load()
         runtime[DATA_PLAYLIST_STORE] = playlists
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
-    # Add an older-HA LLM API fallback; native tool discovery lives in llm.py.
-    from .llm import async_register_legacy_api
+    # Register a selectable LLM tool provider on every supported HA; related: llm.py.
+    from .llm import async_register_api
 
-    async_register_legacy_api(hass, config_entry)
+    async_register_api(hass, config_entry)
     config_entry.async_on_unload(config_entry.add_update_listener(_async_update_options))
     _LOGGER.info("YouTube Content Search services configured")
     return True

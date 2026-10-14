@@ -12,11 +12,6 @@ from .const import CONF_API_KEY, DOMAIN
 from .services import is_cast_player
 
 try:
-    from homeassistant.components import llm as llm_component
-except ImportError:
-    llm_component = None
-
-try:
     import probatio as schema_api
 except ImportError:
     schema_api = vol
@@ -95,15 +90,12 @@ def _tool_data(hass, llm_context):
 
 @callback
 def async_get_tools(hass: HomeAssistant, llm_context, api_id: str):
-    """Contribute to native Assist on HA versions supporting LLM platforms."""
-    if api_id != llm.LLM_API_ASSIST or not hasattr(llm_component, "LLMTools"):
-        return None
-    tools, prompt = _tool_data(hass, llm_context)
-    return llm_component.LLMTools(tools=tools, prompt=prompt) if tools else None
+    """Use the explicitly selected API only; avoid duplicate tools in Assist."""
+    return None
 
 
 class YouTubeAPI(llm.API):
-    """Fallback selectable API for HA versions without native tool providers."""
+    """Selectable YouTube provider for the conversation agent's API list."""
 
     def __init__(self, hass):
         super().__init__(hass=hass, id=DOMAIN, name="YouTube Content Search")
@@ -114,7 +106,6 @@ class YouTubeAPI(llm.API):
 
 
 @callback
-def async_register_legacy_api(hass: HomeAssistant, entry):
-    """Register only on older HA; entry unload removes the API automatically."""
-    if not hasattr(llm_component, "LLMTools"):
-        entry.async_on_unload(llm.async_register_api(hass, YouTubeAPI(hass)))
+def async_register_api(hass: HomeAssistant, entry):
+    """Always register the provider; related: __init__.py and README.md."""
+    entry.async_on_unload(llm.async_register_api(hass, YouTubeAPI(hass)))

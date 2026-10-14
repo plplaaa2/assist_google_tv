@@ -165,9 +165,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.hass.exposed.add(entity)
             if platform:
                 self.entity_entries[entity] = SimpleNamespace(platform=platform)
-        result = llm_tools.async_get_tools(self.hass, context, "assist")
+        result = await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)
         for entity in ["media_player.tv_remote", "media_player.speaker", "media_player.unregistered"]:
-            self.assertNotIn(entity, result.prompt)
+            self.assertNotIn(entity, result.api_prompt)
             with self.assertRaises(HAError):
                 await result.tools[0].async_call(
                     self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": entity}), context,
@@ -180,19 +180,19 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cast_identity_rechecked_at_call_time(self):
         context = self._llm_context()
-        tool = llm_tools.async_get_tools(self.hass, context, "assist").tools[0]
+        tool = (await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools[0]
         self.entity_entries["media_player.tv"].platform = "androidtv_remote"
-        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
+        self.assertEqual((await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools, [])
         with self.assertRaises(HAError):
             await tool.async_call(self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"}), context)
         self.hass.services.async_call.assert_not_awaited()
 
     async def test_assist_tool_discovery_and_playback_context(self):
         context = self._llm_context()
-        result = llm_tools.async_get_tools(self.hass, context, "assist")
+        result = await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)
         self.assertEqual(len(result.tools), 1)
-        self.assertIn("media_player.tv", result.prompt)
-        self.assertNotIn(self.entry.data["api_key"], result.prompt)
+        self.assertIn("media_player.tv", result.api_prompt)
+        self.assertNotIn(self.entry.data["api_key"], result.api_prompt)
         args = {"query": "music", "entity_id": "media_player.tv"}
         response = await result.tools[0].async_call(self.hass, SimpleNamespace(tool_args=args), context)
         self.assertEqual(response.data["status"], "playback_requested")
@@ -200,15 +200,16 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             "youtube_content_search", "search_play", args, blocking=True, context=context.context,
         )
         self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "other_api"))
+        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
 
     async def test_assist_tool_rechecks_exposure_and_configuration(self):
         context = self._llm_context()
-        tool = llm_tools.async_get_tools(self.hass, context, "assist").tools[0]
+        tool = (await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools[0]
         call = SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"})
         self.hass.exposed.clear()
         with self.assertRaises(HAError):
             await tool.async_call(self.hass, call, context)
-        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
+        self.assertEqual((await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools, [])
         self.hass.exposed.add("media_player.tv")
         self.states["media_player.tv"].state = "unavailable"
         with self.assertRaises(HAError):
@@ -222,7 +223,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HAError):
             await tool.async_call(self.hass, call, context)
         await integration.async_unload_entry(self.hass, self.entry)
-        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
+        self.assertEqual((await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools, [])
         with self.assertRaises(HAError):
             await tool.async_call(self.hass, call, context)
         self.hass.services.async_call.assert_not_awaited()
@@ -235,12 +236,41 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"}), context,
             )
 
-    async def test_legacy_api_registration_and_result(self):
+    # Exercise setup, API listing and unload instead of just mocking registration.
+    async def test_provider_list_registration_unload_and_reload(self):
+        providers = {}
+        callbacks = []
+
+        def register(hass, api):
+            if api.id in providers:
+                raise HAError("Duplicate API")
+            providers[api.id] = api
+            return lambda: providers.pop(api.id)
+
+        self.entry.async_on_unload = callbacks.append
+        with patch.object(llm_tools.llm, "async_register_api", register):
+            await integration.async_setup_entry(self.hass, self.entry)
+            self.assertEqual(providers["youtube_content_search"].name, "YouTube Content Search")
+            await integration._async_update_options(self.hass, self.entry)
+            self.assertEqual(len(providers), 1)
+            await integration.async_unload_entry(self.hass, self.entry)
+            for cleanup in callbacks:
+                cleanup()
+            self.assertEqual(providers, {})
+            callbacks.clear()
+            # Registration also works without the newer native LLM platform.
+            with patch.dict(sys.modules["homeassistant.components.llm"].__dict__, clear=True):
+                await integration.async_setup_entry(self.hass, self.entry)
+                self.assertIn("youtube_content_search", providers)
+                callbacks[0]()
+                self.assertEqual(providers, {})
+
+    async def test_provider_api_registration_and_legacy_result(self):
         context = self._llm_context()
         register = sys.modules["homeassistant.helpers.llm"].async_register_api
         register.reset_mock()
-        with patch.object(llm_tools, "llm_component", None):
-            llm_tools.async_register_legacy_api(self.hass, self.entry)
+        with patch.object(llm_tools.llm, "async_register_api", register):
+            llm_tools.async_register_api(self.hass, self.entry)
             register.assert_called_once()
             self.entry.async_on_unload.assert_called_with(register.return_value)
             api = register.call_args.args[1]

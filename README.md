@@ -34,8 +34,8 @@ data:
 업데이트한 통합 폴더를 설치하고 HA를 재시작합니다. 도구 호출을 지원하는 LLM 대화 에이전트가 필요합니다.
 
 1. 설정 → 음성 어시스턴트에서 재생할 `media_player`를 Assist에 노출합니다.
-2. 대화 에이전트 설정에서 Assist API를 활성화합니다. 네이티브 도구 공급자 기능을 지원하는 HA에서는 이 통합의 `llm.py`가 검색·재생 도구를 Assist에 제공합니다.
-3. 네이티브 기능이 없는 HA에서는 통합 설정 시 별도 `YouTube Content Search` LLM API를 등록합니다. 대화 에이전트의 API 선택 목록에서 선택하세요. 여러 API를 지원하면 기본 Assist도 함께 선택할 수 있습니다.
+2. 대화 에이전트 설정의 **Tool providers** 또는 **Control Home Assistant / LLM API** 목록에서 **YouTube Content Search**를 선택합니다. 통합이 로드되면 HA 버전에 관계없이 별도 LLM API를 등록합니다.
+3. 여러 API를 지원하면 기본 **Assist**도 함께 선택할 수 있습니다. YouTube 도구는 **YouTube Content Search**를 선택했을 때 제공하며, 기본 Assist API에 자동 추가하지 않습니다.
 4. 해당 대화 에이전트를 사용하는 음성 어시스턴트에 “거실 TV에서 유튜브 아이유 라이브 틀어줘”처럼 요청합니다.
 
 도구 이름은 `youtube_content_search__search_play`이며 입력은 `query`, `entity_id`입니다.
@@ -45,7 +45,9 @@ Assist에 노출된 사용 가능한 Google Cast 미디어 플레이어만 전�
 재생목록 저장·삭제는 Assist 도구로 제공하지 않습니다. API 키와 백엔드 오류 원문은 LLM에 전달하지 않습니다.
 
 HA 버전과 대화 에이전트에 따라 설정 명칭이 다를 수 있습니다. 기본 내장 대화 에이전트는 이 LLM 도구를 호출하지 않습니다.
-Windows 모의 테스트로 네이티브 도구 탐색, 구버전 API 등록, 권한 변경 및 오류 처리를 검증했으며 실제 HA에서의 등록과 음성 재생은 별도 확인이 필요합니다.
+Windows 모의 테스트로 공급자 등록·해제·재로드, API 도구 탐색, 권한 변경 및 오류 처리를 검증했으며 실제 HA에서의 목록 표시와 음성 재생은 별도 확인이 필요합니다.
+
+목록에 없다면 업데이트한 `llm.py`와 `__init__.py`가 설치되었는지, HA 재시작 후 통합이 정상 로드되었는지 확인하고 대화 에이전트 설정 창을 다시 여세요. 이번 수정은 `dev` 브랜치에 배포되며 `main`과 외부 버전 `1.0.0`은 그대로입니다. 기존 버전만 설치된 상태에서는 수정이 적용되지 않습니다.
 
 공식 인터페이스: [HA LLM API 및 도구 기여](https://developers.home-assistant.io/docs/core/llm/).
 
