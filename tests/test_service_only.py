@@ -1,5 +1,6 @@
 """Contract tests with HA doubles; related: config_flow.py, __init__.py, services.py."""
 import asyncio
+from dataclasses import dataclass
 import importlib
 import json
 from pathlib import Path
@@ -62,6 +63,23 @@ class FileStore:
 
 
 # Stub only HA interfaces; aiohttp and voluptuous remain real dependencies.
+@dataclass
+class LLMTools:
+    tools: list
+    prompt: str = ""
+
+
+@dataclass
+class LLMResult:
+    data: dict
+    error: bool = False
+
+
+class LLMApi:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 modules = {
     "homeassistant": {},
     "homeassistant.core": {"HomeAssistant": object, "ServiceCall": object, "callback": lambda f: f},
@@ -71,6 +89,17 @@ modules = {
     "homeassistant.helpers.config_validation": {"string": vol.All(str), "entity_id": entity_id},
     "homeassistant.helpers.aiohttp_client": {"async_get_clientsession": lambda hass: hass.session},
     "homeassistant.helpers.storage": {"Store": FileStore},
+    "homeassistant.components": {},
+    "homeassistant.components.llm": {"LLMTools": LLMTools},
+    "homeassistant.components.homeassistant": {},
+    "homeassistant.components.homeassistant.exposed_entities": {
+        "async_should_expose": lambda hass, assistant, entity: entity in hass.exposed,
+    },
+    "homeassistant.helpers.llm": {
+        "Tool": object, "API": LLMApi, "APIInstance": LLMApi,
+        "LLM_API_ASSIST": "assist", "ToolResult": LLMResult,
+        "async_register_api": Mock(return_value=Mock()),
+    },
 }
 for name, attributes in modules.items():
     module = ModuleType(name)
@@ -81,6 +110,7 @@ for name, attributes in modules.items():
 integration = importlib.import_module("custom_components.youtube_content_search")
 services = importlib.import_module("custom_components.youtube_content_search.services")
 flows = importlib.import_module("custom_components.youtube_content_search.config_flow")
+llm_tools = importlib.import_module("custom_components.youtube_content_search.llm")
 
 
 class Registry:
@@ -114,6 +144,81 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             async_on_unload=Mock(), add_update_listener=Mock())
         await integration.async_setup(self.hass, {})
         await integration.async_setup_entry(self.hass, self.entry)
+
+    # Verify discovery, authorization and fallback contracts; related: llm.py.
+    def _llm_context(self):
+        self.hass.exposed = {"media_player.tv"}
+        self.states["media_player.tv"] = SimpleNamespace(
+            entity_id="media_player.tv", state="idle", attributes={"friendly_name": "Living room TV"},
+        )
+        return SimpleNamespace(assistant="conversation", context=object())
+
+    async def test_assist_tool_discovery_and_playback_context(self):
+        context = self._llm_context()
+        result = llm_tools.async_get_tools(self.hass, context, "assist")
+        self.assertEqual(len(result.tools), 1)
+        self.assertIn("media_player.tv", result.prompt)
+        self.assertNotIn(self.entry.data["api_key"], result.prompt)
+        args = {"query": "music", "entity_id": "media_player.tv"}
+        response = await result.tools[0].async_call(self.hass, SimpleNamespace(tool_args=args), context)
+        self.assertEqual(response.data["status"], "playback_requested")
+        self.hass.services.async_call.assert_awaited_once_with(
+            "youtube_content_search", "search_play", args, blocking=True, context=context.context,
+        )
+        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "other_api"))
+
+    async def test_assist_tool_rechecks_exposure_and_configuration(self):
+        context = self._llm_context()
+        tool = llm_tools.async_get_tools(self.hass, context, "assist").tools[0]
+        call = SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"})
+        self.hass.exposed.clear()
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, call, context)
+        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
+        self.hass.exposed.add("media_player.tv")
+        self.states["media_player.tv"].state = "unavailable"
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, call, context)
+        self.states["media_player.tv"].state = "idle"
+        context.assistant = "cloud.alexa"
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, call, context)
+        context.assistant = "conversation"
+        call.tool_args["query"] = " "
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, call, context)
+        await integration.async_unload_entry(self.hass, self.entry)
+        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, call, context)
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_assist_errors_do_not_forward_backend_text(self):
+        context = self._llm_context()
+        self.hass.services.async_call.side_effect = HAError("private backend diagnostic")
+        with self.assertRaisesRegex(HAError, "^YouTube search or playback request failed$"):
+            await llm_tools.YouTubeSearchPlayTool().async_call(
+                self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"}), context,
+            )
+
+    async def test_legacy_api_registration_and_result(self):
+        context = self._llm_context()
+        register = sys.modules["homeassistant.helpers.llm"].async_register_api
+        register.reset_mock()
+        with patch.object(llm_tools, "llm_component", None):
+            llm_tools.async_register_legacy_api(self.hass, self.entry)
+            register.assert_called_once()
+            self.entry.async_on_unload.assert_called_with(register.return_value)
+            api = register.call_args.args[1]
+            instance = await api.async_get_api_instance(context)
+            self.assertEqual(len(instance.tools), 1)
+            self.assertEqual(api.id, "youtube_content_search")
+            with patch.dict(sys.modules["homeassistant.helpers.llm"].__dict__):
+                del sys.modules["homeassistant.helpers.llm"].ToolResult
+                result = await instance.tools[0].async_call(
+                    self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"}), context,
+                )
+                self.assertEqual(result["status"], "playback_requested")
 
     async def test_setup_and_options_without_frontend(self):
         self.assertEqual(len(self.hass.services.actions), 3)

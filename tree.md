@@ -1,6 +1,6 @@
 # Project structure
 
-Service-only HA integration. Frontend and legacy backup assets are retained but inactive.
+HA service integration with Assist LLM tools. Frontend and legacy backup assets are retained but inactive.
 
 ```text
 LICENSE
@@ -10,6 +10,7 @@ changelog.jsonl
 custom_components/youtube_content_search/__init__.py
 custom_components/youtube_content_search/config_flow.py
 custom_components/youtube_content_search/const.py
+custom_components/youtube_content_search/llm.py
 custom_components/youtube_content_search/frontend/panel.html
 custom_components/youtube_content_search/frontend/panel.js
 custom_components/youtube_content_search/frontend/styles.css
