@@ -15,7 +15,9 @@ search_play:
       required: true
       selector:
         entity:
-          domain: media_player
+          filter:
+            - domain: media_player
+              integration: cast
 
 playlist_save:
   name: 플레이리스트에 동영상 추가

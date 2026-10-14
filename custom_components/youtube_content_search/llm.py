@@ -9,6 +9,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import llm
 
 from .const import CONF_API_KEY, DOMAIN
+from .services import is_cast_player
 
 try:
     from homeassistant.components import llm as llm_component
@@ -21,13 +22,14 @@ except ImportError:
     schema_api = vol
 
 
-# Share discovery and call-time checks; related: README.md and tests/test_service_only.py.
+# Share discovery and call-time Cast checks; related: services.py and tests/test_service_only.py.
 def _players(hass, llm_context):
     if llm_context.assistant != "conversation":
         return []
     return [
         state for state in hass.states.async_all()
         if state.entity_id.startswith("media_player.")
+        and is_cast_player(hass, state.entity_id)
         and state.state not in ("unavailable", "unknown")
         and async_should_expose(hass, "conversation", state.entity_id)
     ]
@@ -57,7 +59,7 @@ class YouTubeSearchPlayTool(llm.Tool):
         if not args["query"].strip():
             raise ServiceValidationError("Search query cannot be empty")
         if args["entity_id"] not in {state.entity_id for state in _players(hass, llm_context)}:
-            raise ServiceValidationError("Choose an available media player exposed to Assist")
+            raise ServiceValidationError("Choose an available Google Cast media player exposed to Assist")
         try:
             await hass.services.async_call(
                 DOMAIN, "search_play", args, blocking=True, context=llm_context.context,

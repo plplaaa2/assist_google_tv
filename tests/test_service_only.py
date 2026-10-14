@@ -89,6 +89,7 @@ modules = {
     "homeassistant.helpers.config_validation": {"string": vol.All(str), "entity_id": entity_id},
     "homeassistant.helpers.aiohttp_client": {"async_get_clientsession": lambda hass: hass.session},
     "homeassistant.helpers.storage": {"Store": FileStore},
+    "homeassistant.helpers.entity_registry": {"async_get": lambda hass: hass.entity_registry},
     "homeassistant.components": {},
     "homeassistant.components.llm": {"LLMTools": LLMTools},
     "homeassistant.components.homeassistant": {},
@@ -134,12 +135,14 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.storage_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.storage_dir.cleanup)
         self.states = {}
+        self.entity_entries = {"media_player.tv": SimpleNamespace(platform="cast")}
         self.hass = SimpleNamespace(data={}, storage_dir=self.storage_dir.name, services=Registry(), states=SimpleNamespace(
             get=self.states.get,
             async_all=lambda: list(self.states.values()),
             async_set=lambda name, state, attrs: self.states.update({name: SimpleNamespace(entity_id=name, attributes=attrs)}),
             async_remove=lambda name: self.states.pop(name, None),
         ))
+        self.hass.entity_registry = SimpleNamespace(async_get=self.entity_entries.get)
         self.entry = SimpleNamespace(data={"api_key": uuid.uuid4().hex}, options={},
             async_on_unload=Mock(), add_update_listener=Mock())
         await integration.async_setup(self.hass, {})
@@ -152,6 +155,37 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             entity_id="media_player.tv", state="idle", attributes={"friendly_name": "Living room TV"},
         )
         return SimpleNamespace(assistant="conversation", context=object())
+
+    async def test_cast_filter_excludes_other_and_unregistered_players(self):
+        context = self._llm_context()
+        for entity, platform in [("media_player.tv_remote", "androidtv_remote"),
+                                 ("media_player.speaker", "sonos"),
+                                 ("media_player.unregistered", None)]:
+            self.states[entity] = SimpleNamespace(entity_id=entity, state="idle", attributes={})
+            self.hass.exposed.add(entity)
+            if platform:
+                self.entity_entries[entity] = SimpleNamespace(platform=platform)
+        result = llm_tools.async_get_tools(self.hass, context, "assist")
+        for entity in ["media_player.tv_remote", "media_player.speaker", "media_player.unregistered"]:
+            self.assertNotIn(entity, result.prompt)
+            with self.assertRaises(HAError):
+                await result.tools[0].async_call(
+                    self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": entity}), context,
+                )
+            with patch.object(services, "_async_youtube_request", AsyncMock()) as request:
+                with self.assertRaises(HAError):
+                    await self.hass.services.invoke("search_play", {"query": "music", "entity_id": entity})
+                request.assert_not_awaited()
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_cast_identity_rechecked_at_call_time(self):
+        context = self._llm_context()
+        tool = llm_tools.async_get_tools(self.hass, context, "assist").tools[0]
+        self.entity_entries["media_player.tv"].platform = "androidtv_remote"
+        self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"}), context)
+        self.hass.services.async_call.assert_not_awaited()
 
     async def test_assist_tool_discovery_and_playback_context(self):
         context = self._llm_context()

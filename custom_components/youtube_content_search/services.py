@@ -10,6 +10,7 @@ import re
 import voluptuous as vol
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -325,11 +326,23 @@ async def _async_youtube_request(hass: HomeAssistant, resource: str, params: dic
         raise HomeAssistantError("Unable to retrieve YouTube data") from None
 
 
+# Share Cast identity checks with Assist; related: llm.py and services.yaml.
+def is_cast_player(hass: HomeAssistant, entity_id: str) -> bool:
+    """Allow only media players registered by the Google Cast integration."""
+    if not entity_id.startswith("media_player."):
+        return False
+    entry = er.async_get(hass).async_get(entity_id)
+    return entry is not None and entry.platform == "cast"
+
+
+# Validate Cast targets before API requests; related: llm.py/services.yaml.
 async def async_search_play(hass: HomeAssistant, call: ServiceCall):
     """Search for one video and play it using Google Cast."""
     query = call.data["query"].strip()
     if not query:
         raise ServiceValidationError("Search query cannot be empty")
+    if not is_cast_player(hass, call.data["entity_id"]):
+        raise ServiceValidationError("Choose a media player provided by Google Cast")
     data = await _async_youtube_request(hass, "search", {
         "part": "snippet", "type": "video", "maxResults": 1, "q": query,
     })
