@@ -9,15 +9,23 @@ Home Assistant 서비스(액션)로 YouTube 영상을 검색해 Google Cast 기�
 
 ## 설치와 설정
 
+### 자동설치(권장)
+
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=plplaaa2&repository=https%3A%2F%2Fgithub.com%2Fplplaaa2%2Fyoutube_content_search&category=integration)
 
 위 뱃지 클릭 후 설치
 
+### 수동설치
+
+`custom_components/youtube_content_search` 폴더만 HA의 `/config/custom_components/youtube_content_search`로 복사합니다.
+
+
+### 설정 방법
+
 1. Google Cloud에서 YouTube Data API v3를 활성화하고 API 키를 준비합니다.
 2. Google Cast 통합을 설정하고 대상 `media_player` 엔티티를 확인합니다.
-3. 수동 설치는 `custom_components/youtube_content_search` 폴더만 HA의 `/config/custom_components/youtube_content_search`로 복사합니다.
-4. HA를 재시작하고 설정 → 기기 및 서비스 → 통합 추가에서 YouTube Content Search를 선택합니다.
-5. 설정 화면에 API 키를 입력합니다. 옵션 변경은 이후 액션 호출부터 적용됩니다.
+3. HA를 재시작하고 설정 → 기기 및 서비스 → 통합 추가에서 YouTube Content Search를 선택합니다.
+4. 설정 화면에 API 키를 입력합니다. 옵션 변경은 이후 액션 호출부터 적용됩니다.
 
 키는 HA 설정 엔트리에 저장되며, 이 통합은 별도 암호화 저장을 제공하지 않습니다.
 자동화 YAML에 실제 키를 넣을 필요는 없습니다.
