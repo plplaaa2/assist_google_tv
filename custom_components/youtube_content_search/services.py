@@ -335,22 +335,54 @@ def is_cast_player(hass: HomeAssistant, entity_id: str) -> bool:
     return entry is not None and entry.platform == "cast"
 
 
+def _video_id_from_input(value: str) -> str:
+    """Accept an 11-character YouTube video ID or a supported video URL."""
+    value = value.strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", value):
+        return value
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError
+        if host == "youtu.be":
+            candidate = parsed.path.strip("/").split("/")[0]
+        elif host in {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}:
+            parts = [part for part in parsed.path.split("/") if part]
+            if parsed.path == "/watch":
+                candidate = urllib.parse.parse_qs(parsed.query).get("v", [""])[0]
+            elif len(parts) == 2 and parts[0] in {"shorts", "embed", "live"}:
+                candidate = parts[1]
+            else:
+                raise ValueError
+        else:
+            raise ValueError
+    except (ValueError, UnicodeError):
+        raise ServiceValidationError("Provide a YouTube video URL or 11-character video ID") from None
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate):
+        raise ServiceValidationError("Provide a YouTube video URL or 11-character video ID")
+    return candidate
+
+
 # Validate Cast targets before API requests; related: llm.py/services.yaml.
 async def async_search_play(hass: HomeAssistant, call: ServiceCall):
-    """Search for one video and play it using Google Cast."""
-    query = call.data["query"].strip()
-    if not query:
-        raise ServiceValidationError("Search query cannot be empty")
+    """Search for or directly select one video, then play it using Google Cast."""
+    query = (call.data.get("query") or "").strip()
+    video = (call.data.get("video") or "").strip()
+    if bool(query) == bool(video):
+        raise ServiceValidationError("Provide exactly one of a search query or video URL/ID")
     if not is_cast_player(hass, call.data["entity_id"]):
         raise ServiceValidationError("Choose a media player provided by Google Cast")
-    data = await _async_youtube_request(hass, "search", {
-        "part": "snippet", "type": "video", "maxResults": 1, "q": query,
-    })
-    items = data.get("items") or []
-    if not items or not items[0].get("id", {}).get("videoId"):
-        raise HomeAssistantError("No YouTube video found")
-    # Cast playback only; related: services.yaml and README.md.
-    video_id = items[0]["id"]["videoId"]
+    if video:
+        video_id = _video_id_from_input(video)
+    else:
+        data = await _async_youtube_request(hass, "search", {
+            "part": "snippet", "type": "video", "maxResults": 1, "q": query,
+        })
+        items = data.get("items") or []
+        if not items or not items[0].get("id", {}).get("videoId"):
+            raise HomeAssistantError("No YouTube video found")
+        video_id = items[0]["id"]["videoId"]
     await hass.services.async_call(
         "media_player", "play_media", {
             "entity_id": call.data["entity_id"],
@@ -435,7 +467,8 @@ async def async_setup_services(hass: HomeAssistant):
 
     actions = {
         "search_play": (_search_play, vol.Schema({
-            vol.Required("query"): cv.string,
+            vol.Optional("query"): cv.string,
+            vol.Optional("video"): cv.string,
             vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^media_player\.")),
         })),
         "playlist_save": (_playlist_save_service, vol.Schema({
