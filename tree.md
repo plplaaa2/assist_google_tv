@@ -6,6 +6,7 @@ HA service integration with Assist LLM tools. Frontend assets are retained but i
 LICENSE
 README.md
 README.ko.md
+CHANGELOG.md
 changelog.jsonl
 .github/workflows/validate.yaml
 custom_components/youtube_content_search/__init__.py
