@@ -132,6 +132,7 @@ python -B -m unittest discover -s tests -v
 테스트는 HA 인터페이스를 모의 구현하고 임시 파일로 재생목록 복원을 검증합니다.
 실제 HA Store 동작·설정 로딩·API 인증·Cast 기기 재생은 별도 확인이 필요합니다.
 외부 통합 버전은 `1.1.0`입니다.
+HACS 검증 GitHub Action은 push, pull request, 매일 정기 실행, 수동 실행 시 저장소를 통합 카테고리로 검증합니다.
 
 ## 공식 참고 자료
 

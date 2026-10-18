@@ -116,6 +116,8 @@ python -B -m unittest discover -s tests -v
 
 Tests mock Home Assistant interfaces and use temporary files to verify playlist restoration. Actual Home Assistant Store behavior, configuration loading, API authentication, and Cast playback require separate verification.
 
+The HACS validation GitHub Action runs on pushes, pull requests, daily, and on manual dispatch. It validates this repository as an integration.
+
 ## Official references
 
 - [Home Assistant manifest](https://developers.home-assistant.io/docs/creating_integration_manifest/)

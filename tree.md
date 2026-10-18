@@ -7,6 +7,7 @@ LICENSE
 README.md
 README.ko.md
 changelog.jsonl
+.github/workflows/validate.yaml
 custom_components/youtube_content_search/__init__.py
 custom_components/youtube_content_search/config_flow.py
 custom_components/youtube_content_search/const.py
