@@ -3,7 +3,6 @@ import json
 
 import voluptuous as vol
 
-from homeassistant.components.homeassistant.exposed_entities import async_should_expose
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import llm
@@ -25,8 +24,6 @@ def _players(hass, llm_context):
         state for state in hass.states.async_all()
         if state.entity_id.startswith("media_player.")
         and is_cast_player(hass, state.entity_id)
-        and state.state not in ("unavailable", "unknown")
-        and async_should_expose(hass, "conversation", state.entity_id)
     ]
 
 
@@ -36,9 +33,10 @@ class YouTubeSearchPlayTool(llm.Tool):
     name = f"{DOMAIN}__search_play"
     title = "YouTube 검색 재생"
     integration = DOMAIN
-    description = "Search YouTube for a video and request playback on an exposed Google Cast player."
+    description = "Search YouTube with query, or play a YouTube URL/video ID directly. Provide exactly one of query or video."
     parameters = schema_api.Schema({
-        schema_api.Required("query"): str,
+        schema_api.Optional("query"): str,
+        schema_api.Optional("video"): str,
         schema_api.Required("entity_id"): str,
     })
     if hasattr(llm, "ToolAnnotations"):
@@ -47,14 +45,16 @@ class YouTubeSearchPlayTool(llm.Tool):
         )
 
     async def async_call(self, hass: HomeAssistant, tool_input, llm_context):
-        """Recheck exposure before consuming API quota or controlling a player."""
+        """Recheck the Google Cast integration before consuming API quota or controlling a player."""
         args = self.parameters(tool_input.tool_args)
         if not hass.data.get(DOMAIN, {}).get(CONF_API_KEY):
             raise ServiceValidationError("YouTube Content Search is not configured")
-        if not args["query"].strip():
-            raise ServiceValidationError("Search query cannot be empty")
+        query = (args.get("query") or "").strip()
+        video = (args.get("video") or "").strip()
+        if bool(query) == bool(video):
+            raise ServiceValidationError("Provide exactly one of a search query or video URL/ID")
         if args["entity_id"] not in {state.entity_id for state in _players(hass, llm_context)}:
-            raise ServiceValidationError("Choose an available Google Cast media player exposed to Assist")
+            raise ServiceValidationError("Choose a media player provided by Google Cast")
         try:
             await hass.services.async_call(
                 DOMAIN, "search_play", args, blocking=True, context=llm_context.context,
@@ -79,6 +79,7 @@ def _tool_data(hass, llm_context):
                 "name": state.attributes.get("friendly_name", state.entity_id)} for state in players]
     prompt = (
         "Use the YouTube search_play tool when asked to play a YouTube video. "
+        "Provide exactly one of query (search terms) or video (YouTube video URL or 11-character video ID). "
         "Only Google Cast devices with the YouTube app support playback. "
         "Choose the requested player from this list; ask if the target is ambiguous: "
         + json.dumps(targets, ensure_ascii=False)

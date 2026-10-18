@@ -1,12 +1,19 @@
 search_play:
   name: YouTube 검색 재생
-  description: YouTube 영상을 검색해 YouTube 앱을 지원하는 Google Cast 기기에서 재생합니다.
+  description: 검색어로 YouTube 영상을 찾거나 영상 URL/ID로 지정해 Google Cast 기기에서 재생합니다. query와 video 중 하나만 입력하세요.
   fields:
     query:
       name: 검색어
       description: YouTube에서 검색할 키워드 (영상)
-      required: true
+      required: false
       example: 아이유 콘서트
+      selector:
+        text:
+    video:
+      name: 영상 URL 또는 ID
+      description: YouTube 영상 URL 또는 11자리 영상 ID입니다. query와 함께 입력하지 마세요.
+      required: false
+      example: https://youtu.be/dQw4w9WgXcQ
       selector:
         text:
     entity_id:

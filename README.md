@@ -29,6 +29,15 @@ data:
   entity_id: media_player.living_room_tv
 ```
 
+검색 없이 특정 영상을 재생하려면 `query` 대신 `video`에 YouTube 영상 URL 또는 11자리 영상 ID를 지정합니다. `query`와 `video`는 둘 중 하나만 입력합니다.
+
+```yaml
+action: youtube_content_search.search_play
+data:
+  video: "https://youtu.be/dQw4w9WgXcQ"
+  entity_id: media_player.living_room_tv
+```
+
 ## Assist 도구 연결
 
 업데이트한 통합 폴더를 설치하고 HA를 재시작합니다. 도구 호출을 지원하는 LLM 대화 에이전트가 필요합니다.
@@ -38,8 +47,8 @@ data:
 3. 여러 API를 지원하면 기본 **Assist**도 함께 선택할 수 있습니다. YouTube 도구는 **YouTube Content Search**를 선택했을 때 제공하며, 기본 Assist API에 자동 추가하지 않습니다.
 4. 해당 대화 에이전트를 사용하는 음성 어시스턴트에 “거실 TV에서 유튜브 아이유 라이브 틀어줘”처럼 요청합니다.
 
-도구 이름은 `youtube_content_search__search_play`이며 입력은 `query`, `entity_id`입니다.
-Assist에 노출된 사용 가능한 Google Cast 미디어 플레이어만 전달하며, 실행 직전 Cast 통합 소속과 노출 권한을 다시 확인합니다.
+도구 이름은 `youtube_content_search__search_play`이며 입력은 검색어 `query` 또는 영상 URL/ID `video`와 `entity_id`입니다. `query`와 `video`는 하나만 지정합니다.
+액션 선택기와 같은 기준으로 Google Cast 통합의 미디어 플레이어를 전달하며, 실행 직전 Cast 통합 소속을 다시 확인합니다.
 대상이 모호하면 에이전트가 되묻도록 안내합니다. YouTube 앱을 지원하는 Google Cast 기기가 필요합니다.
 성공 응답은 재생 요청을 전달했다는 뜻이며, 실제 화면이나 소리의 재생 성공을 확인한 것은 아닙니다.
 재생목록 저장·삭제는 Assist 도구로 제공하지 않습니다. API 키와 백엔드 오류 원문은 LLM에 전달하지 않습니다.
@@ -47,7 +56,7 @@ Assist에 노출된 사용 가능한 Google Cast 미디어 플레이어만 전�
 HA 버전과 대화 에이전트에 따라 설정 명칭이 다를 수 있습니다. 기본 내장 대화 에이전트는 이 LLM 도구를 호출하지 않습니다.
 Windows 모의 테스트로 공급자 등록·해제·재로드, API 도구 탐색, 권한 변경 및 오류 처리를 검증했으며 실제 HA에서의 목록 표시와 음성 재생은 별도 확인이 필요합니다.
 
-목록에 없다면 버전 `1.0.1`의 통합 파일이 설치되었는지, HA 재시작 후 통합이 정상 로드되었는지 확인하고 대화 에이전트 설정 창을 다시 여세요. 이 버전은 독립 YouTube 공급자 등록, Cast 기기 제한, Assist 연동을 포함합니다.
+목록에 없다면 버전 `1.1.0`의 통합 파일이 설치되었는지, HA 재시작 후 통합이 정상 로드되었는지 확인하고 대화 에이전트 설정 창을 다시 여세요. 이 버전은 독립 YouTube 공급자 등록, Cast 기기 제한, Assist 연동, YouTube URL/영상 ID 직접 재생을 포함합니다.
 
 공식 인터페이스: [HA LLM API 및 도구 기여](https://developers.home-assistant.io/docs/core/llm/).
 
@@ -104,7 +113,7 @@ python -B -m unittest discover -s tests -v
 
 테스트는 HA 인터페이스를 모의 구현하고 임시 파일로 재생목록 복원을 검증합니다.
 실제 HA Store 동작·설정 로딩·API 인증·Cast 기기 재생은 별도 확인이 필요합니다.
-외부 통합 버전은 `1.0.1`입니다.
+외부 통합 버전은 `1.1.0`입니다.
 
 ## 공식 참고 자료
 

@@ -207,13 +207,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         tool = (await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools[0]
         call = SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv"})
         self.hass.exposed.clear()
-        with self.assertRaises(HAError):
-            await tool.async_call(self.hass, call, context)
-        self.assertEqual((await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools, [])
-        self.hass.exposed.add("media_player.tv")
+        self.assertEqual(len((await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools), 1)
         self.states["media_player.tv"].state = "unavailable"
-        with self.assertRaises(HAError):
-            await tool.async_call(self.hass, call, context)
+        response = await tool.async_call(self.hass, call, context)
+        self.assertEqual(response.data["status"], "playback_requested")
         self.states["media_player.tv"].state = "idle"
         context.assistant = "cloud.alexa"
         with self.assertRaises(HAError):
@@ -222,6 +219,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         call.tool_args["query"] = " "
         with self.assertRaises(HAError):
             await tool.async_call(self.hass, call, context)
+        self.hass.services.async_call.reset_mock()
+        context.assistant = "conversation"
         await integration.async_unload_entry(self.hass, self.entry)
         self.assertEqual((await llm_tools.YouTubeAPI(self.hass).async_get_api_instance(context)).tools, [])
         with self.assertRaises(HAError):
@@ -300,6 +299,35 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         args = self.hass.services.async_call.call_args
         self.assertEqual(json.loads(args.args[2]["media_content_id"]), {"app_name": "youtube", "media_id": "dQw4w9WgXcQ"})
         self.assertTrue(args.kwargs["blocking"])
+
+    async def test_direct_youtube_video_input_skips_search(self):
+        for value in [
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42",
+            "https://youtu.be/dQw4w9WgXcQ?t=42",
+            "https://m.youtube.com/shorts/dQw4w9WgXcQ",
+            "https://youtube.com/embed/dQw4w9WgXcQ",
+            "https://youtube.com/live/dQw4w9WgXcQ",
+        ]:
+            with self.subTest(value=value), patch.object(services, "_async_youtube_request", AsyncMock()) as request:
+                await self.hass.services.invoke("search_play", {"video": value, "entity_id": "media_player.tv"})
+                request.assert_not_awaited()
+                args = self.hass.services.async_call.call_args
+                self.assertEqual(
+                    json.loads(args.args[2]["media_content_id"]),
+                    {"app_name": "youtube", "media_id": "dQw4w9WgXcQ"},
+                )
+
+    async def test_direct_video_input_validation_and_query_exclusivity(self):
+        for data in [
+            {"video": "https://example.com/watch?v=dQw4w9WgXcQ", "entity_id": "media_player.tv"},
+            {"video": "https://youtube.com/playlist?list=PL123", "entity_id": "media_player.tv"},
+            {"video": "too-short", "entity_id": "media_player.tv"},
+            {"query": "music", "video": "dQw4w9WgXcQ", "entity_id": "media_player.tv"},
+            {"entity_id": "media_player.tv"},
+        ]:
+            with self.subTest(data=data), self.assertRaises(HAError):
+                await self.hass.services.invoke("search_play", data)
 
     async def test_empty_results_and_unconfigured_actions(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
