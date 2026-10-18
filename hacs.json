@@ -1,6 +1,7 @@
 {
   "name": "YouTube Content Search",
+  "content_in_root": false,
   "render_readme": true,
   "zip_release": false,
-  "filename": "custom_components_youtube_content_search.zip"
+  "hide_default_branch": false
 }
