@@ -1,9 +1,17 @@
 # YouTube Content Search
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+![version](https://img.shields.io/badge/version-v1.1.0-blue.svg?style=for-the-badge)
+[![kofi](https://img.shields.io/badge/Ko--fi-Support%20Me-F16061?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/plplaaa2)
+
 Home Assistant 서비스(액션)로 YouTube 영상을 검색해 Google Cast 기기에서 재생합니다.
 현재 사이드바 패널과 HTTP 검색 경로는 등록하지 않습니다.
 
 ## 설치와 설정
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=plplaaa2&repository=https%3A%2F%2Fgithub.com%2Fplplaaa2%2Fyoutube_content_search&category=integration)
+
+위 뱃지 클릭 후 설치
 
 1. Google Cloud에서 YouTube Data API v3를 활성화하고 API 키를 준비합니다.
 2. Google Cast 통합을 설정하고 대상 `media_player` 엔티티를 확인합니다.
