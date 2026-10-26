@@ -171,6 +171,58 @@ class GoogleTVStopAppTool(GoogleTVAppTool):
         return llm.ToolResult(data=result) if hasattr(llm, "ToolResult") else result
 
 
+class GoogleTVHomeTool(llm.Tool):
+    """Send the HOME key to the configured Google TV; related: app launch/stop tools."""
+
+    name = f"{DOMAIN}__go_home"
+    title = "Google TV 홈 화면으로 이동"
+    integration = DOMAIN
+    description = "Return to the Google TV home screen using the HOME key. This does not turn off the TV."
+    parameters = schema_api.Schema({})
+    if hasattr(llm, "ToolAnnotations"):
+        annotations = llm.ToolAnnotations(read_only=False, destructive=False, idempotent=True, open_world=False)
+
+    def __init__(self, entry):
+        self._entry = entry
+
+    async def async_call(self, hass, tool_input, llm_context):
+        method, entity_id, _apps = _settings(self._entry)
+        self.parameters(tool_input.tool_args)
+        expected_domain = "remote" if method == "remote" else "media_player"
+        if not method or not entity_id.startswith(f"{expected_domain}."):
+            raise ServiceValidationError("Google TV app settings are unavailable")
+        if llm_context.assistant != "conversation":
+            raise ServiceValidationError("Google TV home control is only available to Assist")
+        state = hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            raise ServiceValidationError("Google TV entity is unavailable")
+        if not exposed_entities.async_should_expose(hass, "conversation", entity_id):
+            raise ServiceValidationError("Google TV entity is not exposed to Assist")
+        user_id = getattr(llm_context.context, "user_id", None)
+        if user_id:
+            user = await hass.auth.async_get_user(user_id)
+            if user is None or not user.is_active or not user.permissions.check_entity(entity_id, POLICY_CONTROL):
+                raise ServiceValidationError("Google TV control is not allowed")
+        service_domain, service_name = (
+            ("remote", "send_command") if method == "remote" else ("androidtv", "adb_command")
+        )
+        if not hass.services.has_service(service_domain, service_name):
+            raise ServiceValidationError("Google TV key command service is unavailable")
+        service_data = {"entity_id": entity_id, "command": "HOME"}
+        try:
+            await hass.services.async_call(
+                service_domain, service_name, service_data,
+                blocking=True, context=llm_context.context,
+            )
+        except HomeAssistantError:
+            raise HomeAssistantError("Google TV home navigation request failed") from None
+        except Exception:
+            _LOGGER.exception("Google TV home navigation failed for %s", entity_id)
+            raise HomeAssistantError("Google TV home navigation request failed") from None
+        result = {"status": "home_navigation_requested", "entity_id": entity_id}
+        return llm.ToolResult(data=result) if hasattr(llm, "ToolResult") else result
+
+
 class GoogleTVAppsAPI(llm.API):
     """Selectable provider for configured app launching and ADB app stopping."""
 
@@ -183,14 +235,20 @@ class GoogleTVAppsAPI(llm.API):
         state = self.hass.states.get(entity_id) if entity_id else None
         tools = []
         prompt = ""
-        if llm_context.assistant == "conversation" and state is not None and apps:
-            tools = [GoogleTVAppTool(self._entry)]
-            if method == "adb":
+        if llm_context.assistant == "conversation" and state is not None:
+            tools = [GoogleTVHomeTool(self._entry)]
+            if apps:
+                tools.insert(0, GoogleTVAppTool(self._entry))
+            if method == "adb" and apps:
                 tools.append(GoogleTVStopAppTool(self._entry))
             prompt = (
-                "Use the configured app tool only to open an app. Use the stop tool only when available; "
-                "never turn off the TV to close an app. This does not search for or play specific content. "
+                "Use the home tool to return to the TV home screen. "
+                "Use the stop tool only when available; "
+                "never turn off the TV to close an app. App tools do not search for or play specific content. "
                 "Use exact configured app names. A successful response confirms only that a request was sent. "
-                "Configured apps: " + json.dumps([{"name": app["name"], "launch": app["launch"]} for app in apps], ensure_ascii=False)
+                + ("Configured apps: " + json.dumps(
+                    [{"name": app["name"], "launch": app["launch"]} for app in apps],
+                    ensure_ascii=False,
+                ) if apps else "No apps are configured.")
             )
         return llm.APIInstance(api=self, api_prompt=prompt, llm_context=llm_context, tools=tools)

@@ -118,9 +118,9 @@ In app-link modes, the first video opens through Android TV Remote and the remai
 1. Expose the target Android TV Remote and/or Google Cast entities to Assist.
 2. In integration options, configure the app-launch control method (Remote or ADB), TV entity ID, and app JSON list. Each item uses `{"name":"YouTube","launch":"https://www.youtube.com"}`. Remote uses an activity/deep link; ADB uses the app package ID.
 3. In a compatible conversation agent's **Tool providers** or **LLM API** settings, select **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)**, **Assist Google TV (App Launch)**, or any combination.
-4. Ask the voice assistant to play a YouTube video, open a Netflix title, or launch a configured app.
+4. Ask the voice assistant to play a YouTube video, open a Netflix title, launch a configured app, or return to the Google TV home screen.
 
-The YouTube provider offers `assist_google_tv__youtube_search_play`. The separate Netflix provider offers `assist_google_tv__netflix_play` and works without a YouTube API key. The app provider offers `assist_google_tv__open_app`; ADB mode also provides `assist_google_tv__stop_app`. Android TV Remote does not support app stopping. Playlist actions are available in Home Assistant, not as Assist tools.
+The YouTube provider offers `assist_google_tv__youtube_search_play`. The separate Netflix provider offers `assist_google_tv__netflix_play` and works without a YouTube API key. The app provider offers `assist_google_tv__open_app` and `assist_google_tv__go_home`; ADB mode also provides `assist_google_tv__stop_app`. Home navigation sends the `HOME` key through Android TV Remote or Android TV ADB. Playlist actions are available in Home Assistant, not as Assist tools.
 
 A successful response confirms that Home Assistant sent the playback request; it does not confirm that video or audio started.
 

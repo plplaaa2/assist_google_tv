@@ -322,7 +322,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
         api = GoogleTVAppsAPI(self.hass, self.entry)
         instance = await api.async_get_api_instance(context)
-        self.assertEqual([tool.name for tool in instance.tools], ["assist_google_tv__open_app"])
+        self.assertEqual([tool.name for tool in instance.tools], [
+            "assist_google_tv__open_app", "assist_google_tv__go_home",
+        ])
         result = await instance.tools[0].async_call(
             self.hass,
             SimpleNamespace(tool_args={"app_name": "YouTube"}),
@@ -332,6 +334,14 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.services.async_call.assert_awaited_with(
             "remote", "turn_on",
             {"entity_id": "remote.tv", "activity": "https://www.youtube.com"},
+            blocking=True, context=context.context,
+        )
+        home_result = await instance.tools[1].async_call(
+            self.hass, SimpleNamespace(tool_args={}), context,
+        )
+        self.assertEqual(home_result.data["status"], "home_navigation_requested")
+        self.hass.services.async_call.assert_awaited_with(
+            "remote", "send_command", {"entity_id": "remote.tv", "command": "HOME"},
             blocking=True, context=context.context,
         )
 
@@ -346,9 +356,18 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
         instance = await GoogleTVAppsAPI(self.hass, self.entry).async_get_api_instance(context)
         self.assertEqual([tool.name for tool in instance.tools], [
-            "assist_google_tv__open_app", "assist_google_tv__stop_app",
+            "assist_google_tv__open_app", "assist_google_tv__go_home", "assist_google_tv__stop_app",
         ])
-        result = await instance.tools[1].async_call(
+        home_result = await instance.tools[1].async_call(
+            self.hass, SimpleNamespace(tool_args={}), context,
+        )
+        self.assertEqual(home_result.data["status"], "home_navigation_requested")
+        self.hass.services.async_call.assert_awaited_with(
+            "androidtv", "adb_command", {"entity_id": "media_player.tv", "command": "HOME"},
+            blocking=True, context=context.context,
+        )
+        self.hass.services.async_call.reset_mock()
+        result = await instance.tools[2].async_call(
             self.hass, SimpleNamespace(tool_args={"app_name": "Netflix"}), context,
         )
         self.assertEqual(result.data["status"], "app_stop_requested")
