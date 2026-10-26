@@ -26,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         runtime[DATA_PLAYLIST_STORE] = playlists
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
     hass.data[DOMAIN][CONF_PLAYBACK_MODE] = _entry_playback_mode(config_entry)
-    # Register a selectable LLM tool provider on every supported HA; related: llm.py.
+    # Register selectable playback and app-launch providers; related: llm.py and app_tools.py.
     from .llm import async_register_api
 
     async_register_api(hass, config_entry)

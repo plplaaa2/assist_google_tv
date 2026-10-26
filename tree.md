@@ -11,6 +11,7 @@ CHANGELOG.md
 changelog.jsonl
 .github/workflows/validate.yaml
 custom_components/assist_google_tv/__init__.py
+custom_components/assist_google_tv/app_tools.py
 custom_components/assist_google_tv/config_flow.py
 custom_components/assist_google_tv/brand/icon.png
 custom_components/assist_google_tv/const.py

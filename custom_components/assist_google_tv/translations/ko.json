@@ -5,12 +5,16 @@
         "title": "Assist Google TV",
         "data": {
           "api_key": "YouTube API 키",
-          "playback_mode": "재생 방식 (YouTube 앱 또는 SmartTube, 실패 시 Cast)"
+          "playback_mode": "재생 방식 (YouTube 앱 또는 SmartTube, 실패 시 Cast)",
+          "tv_method": "Google TV 제어 방식 (앱 실행 도구)",
+          "tv_entity_id": "TV 엔티티 ID (예: remote.living_room_tv)",
+          "tv_apps": "앱 목록 JSON (name, launch)"
         }
       }
     },
     "error": {
-      "api_key_required": "API 키를 입력하세요."
+      "api_key_required": "API 키를 입력하세요.",
+      "invalid_apps": "앱 목록은 name과 launch를 포함한 JSON 배열이어야 하며, 앱 이름은 중복될 수 없습니다."
     },
     "abort": {
       "single_instance_allowed": "이 통합은 하나만 설정할 수 있습니다."
@@ -22,12 +26,16 @@
         "title": "Assist Google TV",
         "data": {
           "api_key": "YouTube API 키",
-          "playback_mode": "재생 방식 (YouTube 앱 또는 SmartTube, 실패 시 Cast)"
+          "playback_mode": "재생 방식 (YouTube 앱 또는 SmartTube, 실패 시 Cast)",
+          "tv_method": "Google TV 제어 방식 (앱 실행 도구)",
+          "tv_entity_id": "TV 엔티티 ID (예: remote.living_room_tv)",
+          "tv_apps": "앱 목록 JSON (name, launch)"
         }
       }
     },
     "error": {
-      "api_key_required": "API 키를 입력하세요."
+      "api_key_required": "API 키를 입력하세요.",
+      "invalid_apps": "앱 목록은 name과 launch를 포함한 JSON 배열이어야 하며, 앱 이름은 중복될 수 없습니다."
     }
   }
 }

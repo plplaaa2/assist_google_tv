@@ -114,10 +114,11 @@ data:
 ## Assist 음성 명령
 
 1. 사용할 Android TV Remote 및/또는 Google Cast 엔티티를 Assist에 노출합니다.
-2. 도구 호출을 지원하는 대화 에이전트 설정에서 **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)** 중 필요한 공급자를 선택합니다. 두 공급자는 각각 독립적으로 선택할 수 있습니다.
-3. 음성 어시스턴트에 YouTube 영상 재생이나 Netflix 작품 열기를 요청합니다.
+2. 통합 옵션에서 Google TV 앱 실행용 제어 방식(Remote 또는 ADB), TV 엔티티 ID, 앱 JSON 목록을 설정합니다. 각 항목은 `{"name":"YouTube","launch":"https://www.youtube.com"}` 형식입니다. Remote의 `launch`는 activity/deep link, ADB의 `launch`는 앱 패키지 ID를 사용합니다.
+3. 도구 호출을 지원하는 대화 에이전트 설정에서 **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)**, **Assist Google TV (App Launch)** 중 필요한 공급자를 선택합니다. 각각 독립적으로 선택할 수 있습니다.
+4. 음성 어시스턴트에 YouTube 영상 재생, Netflix 작품 열기, 또는 설정된 앱 실행을 요청합니다.
 
-YouTube 도구 이름은 `assist_google_tv__youtube_search_play`입니다. Netflix 도구 이름은 `assist_google_tv__netflix_play`이며 YouTube API 키 없이 사용할 수 있습니다. 재생목록 액션은 Home Assistant 액션으로 제공하며 Assist 도구에는 포함하지 않습니다.
+YouTube 도구 이름은 `assist_google_tv__youtube_search_play`입니다. Netflix 도구 이름은 `assist_google_tv__netflix_play`이며 YouTube API 키 없이 사용할 수 있습니다. 앱 실행 provider는 `assist_google_tv__open_app`을 제공하고, ADB 방식에서는 `assist_google_tv__stop_app`도 제공합니다. Remote 방식은 앱 종료를 지원하지 않습니다. 재생목록 액션은 Home Assistant 액션으로 제공하며 Assist 도구에는 포함하지 않습니다.
 
 성공 응답은 Home Assistant가 재생 요청을 보냈다는 뜻이며, 실제 영상이나 소리의 재생을 확인한 것은 아닙니다.
 

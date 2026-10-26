@@ -5,12 +5,16 @@
         "title": "Assist Google TV",
         "data": {
           "api_key": "YouTube API key",
-          "playback_mode": "Playback mode (YouTube app or SmartTube, Cast on failure)"
+          "playback_mode": "Playback mode (YouTube app or SmartTube, Cast on failure)",
+          "tv_method": "Google TV control method (app launch tool)",
+          "tv_entity_id": "TV entity ID (for example remote.living_room_tv)",
+          "tv_apps": "App list JSON (name, launch)"
         }
       }
     },
     "error": {
-      "api_key_required": "Enter an API key."
+      "api_key_required": "Enter an API key.",
+      "invalid_apps": "App list must be a JSON array of name and launch values with unique app names."
     },
     "abort": {
       "single_instance_allowed": "Only one configuration is allowed."
@@ -22,12 +26,16 @@
         "title": "Assist Google TV",
         "data": {
           "api_key": "YouTube API key",
-          "playback_mode": "Playback mode (YouTube app or SmartTube, Cast on failure)"
+          "playback_mode": "Playback mode (YouTube app or SmartTube, Cast on failure)",
+          "tv_method": "Google TV control method (app launch tool)",
+          "tv_entity_id": "TV entity ID (for example remote.living_room_tv)",
+          "tv_apps": "App list JSON (name, launch)"
         }
       }
     },
     "error": {
-      "api_key_required": "Enter an API key."
+      "api_key_required": "Enter an API key.",
+      "invalid_apps": "App list must be a JSON array of name and launch values with unique app names."
     }
   }
 }

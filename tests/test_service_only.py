@@ -102,6 +102,9 @@ modules = {
     "homeassistant.components.homeassistant.exposed_entities": {
         "async_should_expose": lambda hass, assistant, entity: entity in hass.exposed,
     },
+    "homeassistant.auth": {},
+    "homeassistant.auth.permissions": {},
+    "homeassistant.auth.permissions.const": {"POLICY_CONTROL": "control"},
     "homeassistant.helpers.llm": {
         "Tool": object, "API": LLMApi, "APIInstance": LLMApi,
         "LLM_API_ASSIST": "assist", "ToolResult": LLMResult,
@@ -127,7 +130,9 @@ class Registry:
         self.async_call = AsyncMock()
 
     def has_service(self, domain, name):
-        return domain == "assist_google_tv" and name in self.actions
+        return (domain == "assist_google_tv" and name in self.actions) or domain in {
+            "remote", "media_player", "androidtv",
+        }
 
     def async_register(self, domain, name, handler, schema, **kwargs):
         self.actions[name] = (handler, schema, kwargs.get("supports_response"))
@@ -267,7 +272,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(providers["assist_google_tv"].name, "Assist Google TV (YouTube)")
             self.assertEqual(providers["assist_google_tv_netflix"].name, "Assist Google TV (Netflix)")
             await integration._async_update_options(self.hass, self.entry)
-            self.assertEqual(len(providers), 2)
+            self.assertEqual(len(providers), 3)
             await integration.async_unload_entry(self.hass, self.entry)
             for cleanup in callbacks:
                 cleanup()
@@ -287,9 +292,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         register.reset_mock()
         with patch.object(llm_tools.llm, "async_register_api", register):
             llm_tools.async_register_api(self.hass, self.entry)
-            self.assertEqual(register.call_count, 2)
+            self.assertEqual(register.call_count, 3)
             apis = [call.args[1] for call in register.call_args_list]
-            self.assertEqual([api.id for api in apis], ["assist_google_tv", "assist_google_tv_netflix"])
+            self.assertEqual([api.id for api in apis], ["assist_google_tv", "assist_google_tv_netflix", "assist_google_tv_apps"])
             self.entry.async_on_unload.assert_any_call(register.return_value)
             api = apis[0]
             instance = await api.async_get_api_instance(context)
@@ -301,6 +306,57 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                     self.hass, SimpleNamespace(tool_args={"query": "music", "entity_id": "media_player.tv", "cast_entity_id": "media_player.tv"}), context,
                 )
                 self.assertEqual(result["status"], "playback_requested")
+
+    async def test_google_tv_app_launch_provider_uses_configured_allowlist(self):
+        context = self._llm_context()
+        self.entry.options.update({
+            "tv_method": "remote",
+            "tv_entity_id": "remote.tv",
+            "tv_apps": '[{"name":"YouTube","launch":"https://www.youtube.com"}]',
+        })
+        self.hass.exposed.add("remote.tv")
+        self.states["remote.tv"] = SimpleNamespace(
+            entity_id="remote.tv", state="on", attributes={"friendly_name": "Living room TV"},
+        )
+        from custom_components.assist_google_tv.app_tools import GoogleTVAppsAPI
+
+        api = GoogleTVAppsAPI(self.hass, self.entry)
+        instance = await api.async_get_api_instance(context)
+        self.assertEqual([tool.name for tool in instance.tools], ["assist_google_tv__open_app"])
+        result = await instance.tools[0].async_call(
+            self.hass,
+            SimpleNamespace(tool_args={"app_name": "YouTube"}),
+            context,
+        )
+        self.assertEqual(result.data["status"], "app_launch_requested")
+        self.hass.services.async_call.assert_awaited_with(
+            "remote", "turn_on",
+            {"entity_id": "remote.tv", "activity": "https://www.youtube.com"},
+            blocking=True, context=context.context,
+        )
+
+    async def test_google_tv_adb_app_stop_does_not_power_off_tv(self):
+        context = self._llm_context()
+        self.entry.options.update({
+            "tv_method": "adb",
+            "tv_entity_id": "media_player.tv",
+            "tv_apps": '[{"name":"Netflix","launch":"com.netflix.ninja"}]',
+        })
+        from custom_components.assist_google_tv.app_tools import GoogleTVAppsAPI
+
+        instance = await GoogleTVAppsAPI(self.hass, self.entry).async_get_api_instance(context)
+        self.assertEqual([tool.name for tool in instance.tools], [
+            "assist_google_tv__open_app", "assist_google_tv__stop_app",
+        ])
+        result = await instance.tools[1].async_call(
+            self.hass, SimpleNamespace(tool_args={"app_name": "Netflix"}), context,
+        )
+        self.assertEqual(result.data["status"], "app_stop_requested")
+        self.hass.services.async_call.assert_awaited_once_with(
+            "media_player", "select_source",
+            {"entity_id": "media_player.tv", "source": "!com.netflix.ninja"},
+            blocking=True, context=context.context,
+        )
 
     async def test_netflix_assist_provider_is_separate_and_needs_no_youtube_key(self):
         context = self._llm_context()

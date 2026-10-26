@@ -1,8 +1,11 @@
+import json
+
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from .const import (
-    CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN,
+    CONF_API_KEY, CONF_PLAYBACK_MODE, CONF_TV_APPS, CONF_TV_ENTITY_ID, CONF_TV_METHOD,
+    DEFAULT_PLAYBACK_MODE, DOMAIN,
     PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST, PLAYBACK_MODE_CAST_FALLBACK, PLAYBACK_MODE_SMARTTUBE,
     PLAYBACK_MODE_YOUTUBE_APP,
 )
@@ -19,15 +22,21 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             api_key = user_input.get(CONF_API_KEY, "").strip()
-            if api_key:
+            if api_key and _valid_apps(user_input.get(CONF_TV_APPS, "[]")):
                 return self.async_create_entry(title="Assist Google TV", data={
                     CONF_API_KEY: api_key,
                     CONF_PLAYBACK_MODE: user_input.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE)
                     if user_input.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE) in {
                         PLAYBACK_MODE_CAST, *PLAYBACK_MODE_APP_LINKS,
                     } else DEFAULT_PLAYBACK_MODE,
+                    CONF_TV_METHOD: user_input.get(CONF_TV_METHOD, "remote"),
+                    CONF_TV_ENTITY_ID: user_input.get(CONF_TV_ENTITY_ID, "").strip(),
+                    CONF_TV_APPS: user_input.get(
+                        CONF_TV_APPS,
+                        '[{"name":"YouTube","launch":"https://www.youtube.com"}]',
+                    ),
                 })
-            errors["base"] = "api_key_required"
+            errors["base"] = "api_key_required" if not api_key else "invalid_apps"
 
         schema = vol.Schema({
             vol.Required(CONF_API_KEY): str,
@@ -37,6 +46,15 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 PLAYBACK_MODE_YOUTUBE_APP: "공식 YouTube 앱 → Cast fallback",
                 PLAYBACK_MODE_SMARTTUBE: "SmartTube → Cast fallback",
             }),
+            vol.Optional(CONF_TV_METHOD, default="remote"): vol.In({
+                "remote": "Android TV Remote",
+                "adb": "Android TV ADB",
+            }),
+            vol.Optional(CONF_TV_ENTITY_ID, default=""): str,
+            vol.Optional(
+                CONF_TV_APPS,
+                default='[{"name":"YouTube","launch":"https://www.youtube.com"}]',
+            ): str,
         })
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
@@ -57,10 +75,14 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
         # Apply options through the entry listener; related: __init__.py.
         errors = {}
         if user_input is not None:
+            apps = user_input.get(
+                CONF_TV_APPS,
+                self._entry.options.get(CONF_TV_APPS, self._entry.data.get(CONF_TV_APPS, "[]")),
+            )
             api_key = user_input.get(CONF_API_KEY, self._entry.options.get(
                 CONF_API_KEY, self._entry.data.get(CONF_API_KEY, "")
             )).strip()
-            if api_key:
+            if api_key and _valid_apps(apps):
                 return self.async_create_entry(title="", data={
                     CONF_API_KEY: api_key,
                     CONF_PLAYBACK_MODE: user_input.get(
@@ -73,8 +95,17 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_PLAYBACK_MODE,
                         self._entry.data.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE),
                     )) in {PLAYBACK_MODE_CAST, *PLAYBACK_MODE_APP_LINKS} else DEFAULT_PLAYBACK_MODE,
+                    CONF_TV_METHOD: user_input.get(
+                        CONF_TV_METHOD,
+                        self._entry.options.get(CONF_TV_METHOD, self._entry.data.get(CONF_TV_METHOD, "remote")),
+                    ),
+                    CONF_TV_ENTITY_ID: user_input.get(
+                        CONF_TV_ENTITY_ID,
+                        self._entry.options.get(CONF_TV_ENTITY_ID, self._entry.data.get(CONF_TV_ENTITY_ID, "")),
+                    ).strip(),
+                    CONF_TV_APPS: apps,
                 })
-            errors["base"] = "api_key_required"
+            errors["base"] = "api_key_required" if not api_key else "invalid_apps"
 
         schema = vol.Schema({
             vol.Optional(
@@ -93,5 +124,48 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
                 PLAYBACK_MODE_YOUTUBE_APP: "공식 YouTube 앱 → Cast fallback",
                 PLAYBACK_MODE_SMARTTUBE: "SmartTube → Cast fallback",
             }),
+            vol.Optional(
+                CONF_TV_METHOD,
+                default=self._entry.options.get(
+                    CONF_TV_METHOD, self._entry.data.get(CONF_TV_METHOD, "remote")
+                ),
+            ): vol.In({"remote": "Android TV Remote", "adb": "Android TV ADB"}),
+            vol.Optional(
+                CONF_TV_ENTITY_ID,
+                default=self._entry.options.get(
+                    CONF_TV_ENTITY_ID, self._entry.data.get(CONF_TV_ENTITY_ID, "")
+                ),
+            ): str,
+            vol.Optional(
+                CONF_TV_APPS,
+                default=self._entry.options.get(
+                    CONF_TV_APPS,
+                    self._entry.data.get(
+                        CONF_TV_APPS,
+                        '[{"name":"YouTube","launch":"https://www.youtube.com"}]',
+                    ),
+                ),
+            ): str,
         })
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+
+def _valid_apps(value):
+    """Validate the configured app allowlist; related: app_tools.py and translations/."""
+    try:
+        apps = json.loads(value)
+    except (TypeError, ValueError):
+        return False
+    return (
+        isinstance(apps, list)
+        and len(apps) <= 30
+        and all(
+            isinstance(app, dict)
+            and isinstance(app.get("name"), str)
+            and bool(app["name"].strip())
+            and isinstance(app.get("launch"), str)
+            and bool(app["launch"].strip())
+            for app in apps
+        )
+        and len({app["name"].strip().casefold() for app in apps}) == len(apps)
+    )

@@ -226,6 +226,9 @@ class NetflixAPI(llm.API):
 
 @callback
 def async_register_api(hass: HomeAssistant, entry):
-    """Register independent YouTube and Netflix providers; related: __init__.py and README.md."""
+    """Register independent playback and app providers; related: __init__.py and README files."""
     entry.async_on_unload(llm.async_register_api(hass, YouTubeAPI(hass)))
     entry.async_on_unload(llm.async_register_api(hass, NetflixAPI(hass)))
+    from .app_tools import GoogleTVAppsAPI
+
+    entry.async_on_unload(llm.async_register_api(hass, GoogleTVAppsAPI(hass, entry)))
