@@ -2,6 +2,11 @@
 
 Notable changes to Assist Google TV are documented here.
 
+## [1.1.10-dev] - 2026-10-26
+
+- Replace the generic blue tile with a consistent Assist TV icon showing voice input and playback.
+- Apply the same icon to the repository icon, logo, and Home Assistant integration brand.
+
 ## [1.1.9-dev] - 2026-10-26
 
 - Prefix YouTube search and playlist action IDs with `youtube_` to make their purpose clear alongside Netflix actions.
