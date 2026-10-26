@@ -489,15 +489,25 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 })
             lookup.assert_not_awaited()
 
-    async def test_netflix_episode_cluster_parser(self):
-        html = ''.join(
-            f'"__typename":"Episode","videoId":{video_id}'
-            for video_id in [100, 101, 102, 200, 201, 202, 203]
+    async def test_netflix_episode_parser_uses_season_edges_and_global_numbers(self):
+        html = (
+            '{"__typename":"Show","seasons":{"edges":['
+            '{"node":{"__typename":"Season","episodes":{"edges":['
+            '{"node":{"__typename":"Episode","videoId":100,"number":1}},'
+            '{"node":{"__typename":"Episode","videoId":101,"number":2}}]}}},'
+            '{"node":{"__typename":"Season","episodes":{"edges":['
+            '{"node":{"__typename":"Episode","videoId":200,"number":49}},'
+            '{"node":{"__typename":"Episode","videoId":201,"number":50}},'
+            '{"node":{"__typename":"Episode","videoId":202,"number":51}},'
+            '{"node":{"__typename":"Episode","videoId":203,"number":52}}]}}}]}'
         )
         self.assertEqual(
-            services._netflix_episode_clusters(html, "100"),
-            [[100, 101, 102], [200, 201, 202, 203]],
+            services._netflix_episode_seasons(html),
+            [[(1, 100), (2, 101)], [(49, 200), (50, 201), (51, 202), (52, 203)]],
         )
+        with patch.object(services, "_async_netflix_request", AsyncMock(return_value=html)):
+            self.assertEqual(await services._async_netflix_episode_id(self.hass, "999", 2, 4), "203")
+            self.assertEqual(await services._async_netflix_episode_id(self.hass, "999", None, 52), "203")
 
     async def test_netflix_title_lookup_decodes_localized_search_links(self):
         response = ('<div class="result"><div class="result__title"><a class="result__a" '

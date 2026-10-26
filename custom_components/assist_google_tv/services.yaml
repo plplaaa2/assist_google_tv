@@ -39,7 +39,7 @@ youtube_search_play:
 
 netflix_play:
   name: 넷플릭스 검색 재생
-  description: 작품명으로 Netflix 작품을 찾습니다. 영화는 바로 재생하고, 시리즈는 작품 페이지를 엽니다. season과 episode를 함께 지정하면 해당 회차를 재생합니다.
+  description: 작품명으로 Netflix 작품을 찾습니다. 영화는 바로 재생하고 시리즈는 작품 페이지를 엽니다. season과 episode를 함께 지정하면 시즌 내 회차로 찾고, episode만 지정하면 Netflix의 전체 누적 회차 번호로 찾습니다.
   fields:
     query:
       name: 작품명
@@ -50,7 +50,7 @@ netflix_play:
         text:
     season:
       name: 시즌
-      description: 열 시즌 번호. episode와 함께 지정하세요.
+      description: 시즌 내 회차를 찾을 때 지정하세요. episode와 함께 사용합니다.
       required: false
       example: 2
       selector:
@@ -59,7 +59,7 @@ netflix_play:
           mode: box
     episode:
       name: 회차
-      description: 열 에피소드 번호. season과 함께 지정하세요.
+      description: 열 회차입니다. season과 함께 쓰면 시즌 내 번호, 생략하면 전체 누적 번호로 검색합니다.
       required: false
       example: 8
       selector:

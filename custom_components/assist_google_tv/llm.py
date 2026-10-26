@@ -98,7 +98,7 @@ class NetflixPlayTool(llm.Tool):
     name = f"{DOMAIN}__netflix_play"
     title = "Netflix 작품 검색 재생"
     integration = DOMAIN
-    description = "Search Netflix using only the requested work's title (omit the TV/room name and playback wording). Play movies directly; open series pages or the specified season and episode on Android TV."
+    description = "Search Netflix using only the requested work's title. For a season-local episode, provide both season and episode; if the user gives only an episode number, find it by Netflix's cumulative series episode number."
     parameters = schema_api.Schema({
         schema_api.Required("query"): str,
         schema_api.Required("entity_id"): str,
@@ -116,8 +116,8 @@ class NetflixPlayTool(llm.Tool):
         query = args["query"].strip()
         if not query:
             raise ServiceValidationError("Provide a Netflix title name")
-        if (args.get("season") is None) != (args.get("episode") is None):
-            raise ServiceValidationError("Provide both season and episode, or neither")
+        if args.get("season") is not None and args.get("episode") is None:
+            raise ServiceValidationError("Provide an episode when specifying a season")
         if args["entity_id"] not in {state.entity_id for state in _android_tv_remotes(hass, llm_context)}:
             raise ServiceValidationError("Choose an Android TV Remote device")
         args["query"] = query
@@ -188,7 +188,7 @@ def _netflix_tool_data(hass, llm_context):
     } for state in players]
     prompt = (
         "Use the Netflix netflix_play tool when asked to play a Netflix movie or open a series title/episode. "
-        "Provide only the work's title as query; omit the TV or room name and words like play/open. Optionally provide both season and episode. Choose the Android TV Remote "
+        "Provide only the work's title as query; omit the TV or room name and words like play/open. If the user says a season and episode, provide both and treat episode as the number within that season. If the user says only an episode number, omit season and treat it as Netflix's cumulative series episode number. Never omit a season the user explicitly stated. Choose the Android TV Remote "
         "target from this list, asking if the target is ambiguous: "
         + json.dumps(targets, ensure_ascii=False)
         + ". A successful result confirms a playback request, not physical playback."

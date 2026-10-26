@@ -492,48 +492,69 @@ async def _async_netflix_title_id(hass: HomeAssistant, query: str) -> str:
     raise HomeAssistantError("Netflix title search returned no usable results")
 
 
-def _netflix_episode_clusters(html: str, title_id: str) -> list[list[int]]:
-    """Group sequential Netflix episode video IDs into seasons, following stv's resolver."""
-    episode_ids: set[int] = set()
-    season_ids: set[int] = set()
-    for kind, raw_id in re.findall(
-        r'"__typename"\s*:\s*"(Episode|Season|Show)"\s*,\s*"videoId"\s*:\s*(\d+)',
-        html,
-    ):
-        if kind == "Episode":
-            episode_ids.add(int(raw_id))
-        elif kind == "Season":
-            season_ids.add(int(raw_id))
-    if episode_ids:
-        ids = sorted(episode_ids)
-    else:
-        raw_ids = {int(value) for value in re.findall(r'"videoId"\s*:\s*(\d+)', html)}
-        ids = sorted(raw_ids - season_ids - {int(title_id)})
+def _netflix_episode_seasons(html: str) -> list[list[tuple[int, int]]]:
+    """Parse Netflix season episode lists as (global number, video ID); related: netflix_play."""
+    seasons = []
+    season_pattern = re.compile(r'"__typename"\s*:\s*"Season"')
+    episode_pattern = re.compile(
+        r'"__typename"\s*:\s*"Episode"\s*,\s*"videoId"\s*:\s*(\d+)\s*,\s*"number"\s*:\s*(\d+)'
+    )
+    for match in season_pattern.finditer(html):
+        start = html.rfind("{", 0, match.start() + 1)
+        if start < 0:
+            continue
+        depth = 0
+        in_string = False
+        escaped = False
+        end = start
+        for end, char in enumerate(html[start:], start):
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+        if depth != 0:
+            continue
+        season_data = html[start:end + 1]
+        episodes = [
+            (int(number), int(video_id))
+            for video_id, number in episode_pattern.findall(season_data)
+        ]
+        if episodes:
+            seasons.append(episodes)
+    return seasons
 
-    clusters: list[list[int]] = []
-    current: list[int] = []
-    for video_id in ids:
-        if current and video_id != current[-1] + 1:
-            if len(current) >= 3:
-                clusters.append(current)
-            current = []
-        current.append(video_id)
-    if len(current) >= 3:
-        clusters.append(current)
-    return clusters
 
-
-async def _async_netflix_episode_id(hass: HomeAssistant, title_id: str, season: int, episode: int) -> str:
-    """Resolve a season/episode to its Netflix video ID from the title page."""
+async def _async_netflix_episode_id(
+    hass: HomeAssistant, title_id: str, season: int | None, episode: int
+) -> str:
+    """Resolve a local season episode or a global episode number to its video ID."""
     html = await _async_netflix_request(
         hass,
         f"https://www.netflix.com/title/{title_id}",
         headers={"Accept-Language": "en-US,en;q=0.9", "User-Agent": "Mozilla/5.0"},
     )
-    seasons = _netflix_episode_clusters(html, title_id)
+    seasons = _netflix_episode_seasons(html)
+    if season is None:
+        for episodes in seasons:
+            for global_number, video_id in episodes:
+                if global_number == episode:
+                    return str(video_id)
+        raise HomeAssistantError(f"Could not find Netflix episode {episode} for title ID {title_id}")
     if season > len(seasons) or episode > len(seasons[season - 1]):
         raise HomeAssistantError(f"Could not find Netflix S{season}E{episode} for title ID {title_id}")
-    return str(seasons[season - 1][episode - 1])
+    return str(seasons[season - 1][episode - 1][1])
 
 
 async def _async_netflix_is_movie(hass: HomeAssistant, title_id: str) -> bool:
@@ -563,15 +584,15 @@ async def async_netflix_play(hass: HomeAssistant, call: ServiceCall) -> None:
     entity_id = call.data["entity_id"]
     if not query:
         raise ServiceValidationError("Provide a Netflix title name")
-    if (season is None) != (episode is None):
-        raise ServiceValidationError("Provide both season and episode, or neither")
-    if season is not None and (season < 1 or episode < 1):
+    if season is not None and episode is None:
+        raise ServiceValidationError("Provide an episode when specifying a season")
+    if (season is not None and season < 1) or (episode is not None and episode < 1):
         raise ServiceValidationError("Season and episode must be positive numbers")
     if not is_app_link_player(hass, entity_id):
         raise ServiceValidationError("Choose a remote provided by Android TV Remote")
 
     title_id = await _async_netflix_title_id(hass, query)
-    if season is not None:
+    if episode is not None:
         content_id = await _async_netflix_episode_id(hass, title_id, season, episode)
         activity = f"https://www.netflix.com/watch/{content_id}?source=30"
     elif await _async_netflix_is_movie(hass, title_id):
