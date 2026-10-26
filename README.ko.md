@@ -109,4 +109,10 @@ python -B -m unittest discover -s tests -v
 python -B validate_syntax.py
 ```
 
+## 기여 및 라이선스
+
+[plplaaa2](https://github.com/plplaaa2)가 관리하며, [OpenAI Codex](https://openai.com/codex/)의 도움을 받아 개발했습니다.
+
+Netflix 작품 검색의 DuckDuckGo HTML 요청 형식, 결과 파싱 방식, 브라우저 지문 fallback은 [Nick Clyde의 `duckduckgo-mcp-server`](https://github.com/nickclyde/duckduckgo-mcp-server)를 바탕으로 하거나 그 구현에서 영감을 받았습니다. 원본은 MIT 라이선스이며 MCP 실행 코드는 포함하지 않습니다. 필요한 저작권 및 허가 고지는 [`THIRD_PARTY_NOTICES.md`](custom_components/assist_google_tv/THIRD_PARTY_NOTICES.md)에 보존했습니다. 그 외 프로젝트 코드는 저장소의 [MIT 라이선스](LICENSE)를 따릅니다.
+
 \n

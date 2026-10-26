@@ -4,6 +4,7 @@ HA service integration with Assist LLM tools. Frontend assets are retained but i
 
 ```text
 LICENSE
+custom_components/assist_google_tv/THIRD_PARTY_NOTICES.md
 README.md
 README.ko.md
 CHANGELOG.md

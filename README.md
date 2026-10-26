@@ -111,4 +111,10 @@ python -B -m unittest discover -s tests -v
 python -B validate_syntax.py
 ```
 
+## Credits and license
+
+Maintained by [plplaaa2](https://github.com/plplaaa2). Developed with assistance from [OpenAI Codex](https://openai.com/codex/).
+
+The DuckDuckGo HTML request format, result parsing approach, and browser-fingerprint fallback in the Netflix title lookup are adapted from or inspired by [Nick Clyde's `duckduckgo-mcp-server`](https://github.com/nickclyde/duckduckgo-mcp-server), available under the MIT License. Its MCP runtime is not included. The required copyright and permission notice is preserved in [`THIRD_PARTY_NOTICES.md`](custom_components/assist_google_tv/THIRD_PARTY_NOTICES.md). The remaining project code is licensed under this repository's [MIT License](LICENSE).
+
 \n
