@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import llm
 
 from .const import CONF_TV_APPS, CONF_TV_ENTITY_ID, CONF_TV_METHOD, DOMAIN
+from .services import _async_dismiss_screensaver
 
 try:
     import probatio as schema_api
@@ -80,6 +81,7 @@ class GoogleTVAppTool(llm.Tool):
             if user is None or not user.is_active or not user.permissions.check_entity(entity_id, POLICY_CONTROL):
                 raise ServiceValidationError("Google TV control is not allowed")
         try:
+            await _async_dismiss_screensaver(hass, entity_id, method, llm_context.context)
             if method == "remote":
                 if not hass.services.has_service("remote", "turn_on"):
                     raise ServiceValidationError("Android TV Remote service is unavailable")

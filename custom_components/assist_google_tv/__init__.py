@@ -9,6 +9,8 @@ from .const import (
     CONF_API_KEY,
     CONF_NETFLIX_SEARCH_REGION,
     CONF_PLAYBACK_MODE,
+    CONF_TV_ENTITY_ID,
+    CONF_TV_METHOD,
     DEFAULT_NETFLIX_SEARCH_REGION,
     DEFAULT_PLAYBACK_MODE,
     DOMAIN,
@@ -37,6 +39,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         CONF_NETFLIX_SEARCH_REGION,
         config_entry.data.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
     )
+    hass.data[DOMAIN][CONF_TV_ENTITY_ID] = config_entry.options.get(
+        CONF_TV_ENTITY_ID, config_entry.data.get(CONF_TV_ENTITY_ID)
+    )
+    hass.data[DOMAIN][CONF_TV_METHOD] = config_entry.options.get(
+        CONF_TV_METHOD, config_entry.data.get(CONF_TV_METHOD)
+    )
     # Register selectable playback and app-launch providers; related: llm.py and app_tools.py.
     from .llm import async_register_api
 
@@ -62,6 +70,12 @@ async def async_setup_entry_credentials(hass: HomeAssistant, config_entry: Confi
     hass.data[DOMAIN][CONF_NETFLIX_SEARCH_REGION] = config_entry.options.get(
         CONF_NETFLIX_SEARCH_REGION,
         config_entry.data.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
+    )
+    hass.data[DOMAIN][CONF_TV_ENTITY_ID] = config_entry.options.get(
+        CONF_TV_ENTITY_ID, config_entry.data.get(CONF_TV_ENTITY_ID)
+    )
+    hass.data[DOMAIN][CONF_TV_METHOD] = config_entry.options.get(
+        CONF_TV_METHOD, config_entry.data.get(CONF_TV_METHOD)
     )
 
 

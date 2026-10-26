@@ -20,6 +20,7 @@ from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from .const import (
     CONF_API_KEY, CONF_NETFLIX_SEARCH_REGION, CONF_PLAYBACK_MODE,
+    CONF_TV_ENTITY_ID, CONF_TV_METHOD,
     DEFAULT_NETFLIX_SEARCH_REGION, DEFAULT_PLAYBACK_MODE, DOMAIN,
     PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST, PLAYBACK_MODE_SMARTTUBE,
     PLAYBACK_MODE_CAST_FALLBACK,
@@ -536,26 +537,45 @@ def _netflix_episode_seasons(html: str) -> list[list[tuple[int, int]]]:
     return seasons
 
 
-# Detect and dismiss common Android TV screensavers before app-link playback; related: Netflix launch below.
+# Detect and dismiss common Android TV screensavers before any content playback; related: app_tools.py.
 def _is_android_tv_screensaver(activity: str) -> bool:
     """Return whether current_activity identifies a known Android TV screensaver."""
     package = activity.casefold().split("/", 1)[0]
     return package in {
         "com.google.android.backdrop",
         "com.google.android.apps.tv.dreamx",
-    } or any(marker in package for marker in ("screensaver", "screen_saver", "backdrop", "dreamx"))
+        "com.android.dreams.basic",
+    } or any(marker in package for marker in ("screensaver", "screen_saver", "backdrop", "dream"))
 
 
-async def _async_dismiss_screensaver(hass: HomeAssistant, entity_id: str) -> bool:
-    """Send BACK only when Android TV Remote reports a screensaver in the foreground."""
+async def _async_dismiss_screensaver(
+    hass: HomeAssistant, entity_id: str | None = None, method: str | None = None, context=None,
+) -> bool:
+    """Send BACK only when the configured TV reports a screensaver in the foreground."""
+    runtime = hass.data.get(DOMAIN, {})
+    entity_id = entity_id or runtime.get(CONF_TV_ENTITY_ID)
+    method = method or runtime.get(CONF_TV_METHOD)
+    if not method and isinstance(entity_id, str):
+        method = "remote" if entity_id.startswith("remote.") else "adb"
+    if not entity_id or method not in ("remote", "adb"):
+        return False
     state = hass.states.get(entity_id)
     attributes = getattr(state, "attributes", {}) if state else {}
-    activity = attributes.get("current_activity", "") if isinstance(attributes, dict) else ""
+    activity = ""
+    if isinstance(attributes, dict):
+        activity = attributes.get("current_activity", "") if method == "remote" else (
+            attributes.get("app_id") or attributes.get("source") or attributes.get("current_activity", "")
+        )
     if not isinstance(activity, str) or not _is_android_tv_screensaver(activity):
         return False
-    await hass.services.async_call(
-        "remote", "send_command", {"entity_id": entity_id, "command": "BACK"}, blocking=True,
+    service_domain, service = (
+        ("remote", "send_command") if method == "remote" else ("androidtv", "adb_command")
     )
+    service_data = {"entity_id": entity_id, "command": "BACK"}
+    call_kwargs = {"blocking": True}
+    if context is not None:
+        call_kwargs["context"] = context
+    await hass.services.async_call(service_domain, service, service_data, **call_kwargs)
     await asyncio.sleep(0.25)
     return True
 
@@ -624,7 +644,9 @@ async def async_netflix_play(hass: HomeAssistant, call: ServiceCall) -> None:
     else:
         activity = f"https://www.netflix.com/title/{title_id}?source=30"
     try:
-        await _async_dismiss_screensaver(hass, entity_id)
+        await _async_dismiss_screensaver(
+            hass, entity_id, "remote", getattr(call, "context", None)
+        )
         await hass.services.async_call(
             "remote", "turn_on", {"entity_id": entity_id, "activity": activity}, blocking=True,
         )
@@ -725,6 +747,9 @@ async def _async_play_video(hass: HomeAssistant, video_id: str, entity_id: str, 
     if not valid_target:
         message = "Choose a remote provided by Android TV Remote" if app_link_mode else "Choose a media player provided by Google Cast"
         raise ServiceValidationError(message)
+    await _async_dismiss_screensaver(
+        hass, entity_id if app_link_mode else None,
+    )
     if app_link_mode:
         activity = f"https://www.youtube.com/watch?v={video_id}"
         if mode in (PLAYBACK_MODE_SMARTTUBE, PLAYBACK_MODE_CAST_FALLBACK):

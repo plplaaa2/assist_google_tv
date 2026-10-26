@@ -466,6 +466,51 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_youtube_play_dismisses_remote_screensaver_first(self):
+        self.hass.data[services.DOMAIN][services.CONF_PLAYBACK_MODE] = "youtube_app_fallback"
+        self.states["remote.tv"] = SimpleNamespace(
+            entity_id="remote.tv", state="on",
+            attributes={"current_activity": "com.google.android.backdrop/.Backdrop"},
+        )
+        await services._async_play_video(self.hass, "dQw4w9WgXcQ", "remote.tv")
+        self.assertEqual(
+            self.hass.services.async_call.await_args_list,
+            [
+                call("remote", "send_command", {
+                    "entity_id": "remote.tv", "command": "BACK",
+                }, blocking=True),
+                call("remote", "turn_on", {
+                    "entity_id": "remote.tv",
+                    "activity": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                }, blocking=True),
+            ],
+        )
+
+    async def test_cast_play_dismisses_configured_adb_screensaver_first(self):
+        self.hass.data[services.DOMAIN].update({
+            services.CONF_PLAYBACK_MODE: "cast",
+            "tv_method": "adb",
+            "tv_entity_id": "media_player.android_tv",
+        })
+        self.states["media_player.android_tv"] = SimpleNamespace(
+            entity_id="media_player.android_tv", state="idle",
+            attributes={"app_id": "com.android.dreams.basic"},
+        )
+        await services._async_play_video(self.hass, "dQw4w9WgXcQ", "media_player.tv")
+        self.assertEqual(
+            self.hass.services.async_call.await_args_list,
+            [
+                call("androidtv", "adb_command", {
+                    "entity_id": "media_player.android_tv", "command": "BACK",
+                }, blocking=True),
+                call("media_player", "play_media", {
+                    "entity_id": "media_player.tv",
+                    "media_content_type": "cast",
+                    "media_content_id": '{"app_name": "youtube", "media_id": "dQw4w9WgXcQ"}',
+                }, blocking=True),
+            ],
+        )
+
     async def test_netflix_movie_without_episode_opens_watch_link(self):
         with patch.object(services, "_async_netflix_title_id", AsyncMock(return_value="81161626")), \
                 patch.object(services, "_async_netflix_is_movie", AsyncMock(return_value=True)):
