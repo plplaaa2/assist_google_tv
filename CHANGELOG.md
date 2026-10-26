@@ -2,6 +2,12 @@
 
 Notable changes to Assist Google TV are documented here.
 
+## [1.0.0] - 2026-10-26
+
+- Publish Assist Google TV as a fresh Home Assistant integration version.
+- Rewrite the English and Korean README guides for the current actions, playback options, and Assist providers.
+- Keep YouTube playlist storage and state IDs available to existing data.
+
 ## [1.1.10-dev] - 2026-10-26
 
 - Replace the generic blue tile with a consistent Assist TV icon showing voice input and playback.

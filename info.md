@@ -1,19 +1,18 @@
-# Assist Google TV 1.1.0
+# Assist Google TV 1.0.0
 
-Search YouTube videos with the YouTube Data API and request playback on Google Cast media players from Home Assistant actions or a compatible LLM conversation agent.
+Control Google TV with Home Assistant Assist. Search and play YouTube videos, open Netflix titles and episodes, and manage local YouTube playlists.
 
 ## Features
 
-- Exposes a selectable **Assist Google TV (YouTube)** LLM API for conversation agent tool providers.
-- Uses the Google Cast integration criterion for both Assist discovery and action playback targets.
-- Rejects non-Cast and unregistered media players before making a YouTube API request.
-- Plays a selected YouTube video directly from a supported video URL or 11-character video ID.
-- Saves YouTube video metadata in persistent Home Assistant playlists.
+- Separate YouTube and Netflix Assist tool providers.
+- YouTube playback from search terms or a direct video URL/ID.
+- Netflix movie, series, and episode links through Android TV Remote.
+- Local playlists that persist across Home Assistant restarts.
 
 ## Requirements
 
-- Home Assistant with a compatible LLM conversation agent for voice or chat tool use.
-- A YouTube Data API v3 key configured in the integration.
-- A Google Cast media player that supports the YouTube app.
+- Home Assistant and a conversation agent that supports tool calls.
+- YouTube Data API v3 key for YouTube search and playlist actions; Netflix does not need the key.
+- Google Cast and/or Android TV Remote, depending on the selected playback mode.
 
-After updating to 1.1.0 and restarting Home Assistant, select **Assist Google TV (YouTube)** in the conversation agent's **Tool providers** or **LLM API** settings. See [README](README.md) for setup details.
+See [README](README.md) for installation and examples.
