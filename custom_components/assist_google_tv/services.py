@@ -536,6 +536,30 @@ def _netflix_episode_seasons(html: str) -> list[list[tuple[int, int]]]:
     return seasons
 
 
+# Detect and dismiss common Android TV screensavers before app-link playback; related: Netflix launch below.
+def _is_android_tv_screensaver(activity: str) -> bool:
+    """Return whether current_activity identifies a known Android TV screensaver."""
+    package = activity.casefold().split("/", 1)[0]
+    return package in {
+        "com.google.android.backdrop",
+        "com.google.android.apps.tv.dreamx",
+    } or any(marker in package for marker in ("screensaver", "screen_saver", "backdrop", "dreamx"))
+
+
+async def _async_dismiss_screensaver(hass: HomeAssistant, entity_id: str) -> bool:
+    """Send BACK only when Android TV Remote reports a screensaver in the foreground."""
+    state = hass.states.get(entity_id)
+    attributes = getattr(state, "attributes", {}) if state else {}
+    activity = attributes.get("current_activity", "") if isinstance(attributes, dict) else ""
+    if not isinstance(activity, str) or not _is_android_tv_screensaver(activity):
+        return False
+    await hass.services.async_call(
+        "remote", "send_command", {"entity_id": entity_id, "command": "BACK"}, blocking=True,
+    )
+    await asyncio.sleep(0.25)
+    return True
+
+
 async def _async_netflix_episode_id(
     hass: HomeAssistant, title_id: str, season: int | None, episode: int
 ) -> str:
@@ -600,6 +624,7 @@ async def async_netflix_play(hass: HomeAssistant, call: ServiceCall) -> None:
     else:
         activity = f"https://www.netflix.com/title/{title_id}?source=30"
     try:
+        await _async_dismiss_screensaver(hass, entity_id)
         await hass.services.async_call(
             "remote", "turn_on", {"entity_id": entity_id, "activity": activity}, blocking=True,
         )

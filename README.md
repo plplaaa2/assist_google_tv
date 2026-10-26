@@ -65,7 +65,7 @@ Use a `media_player` as `entity_id` in Cast-only mode. `cast_entity_id` is only 
 
 ### Open Netflix titles
 
-Provide a title and Android TV Remote entity. Add both `season` and `episode` to select an episode within a season. If you provide only `episode`, it is treated as Netflix's cumulative episode number across the series. Without an episode, movies play directly and series open their title page.
+Provide a title and Android TV Remote entity. A foreground screensaver is dismissed before Netflix opens. Add both `season` and `episode` to select an episode within a season. If you provide only `episode`, it is treated as Netflix's cumulative episode number across the series. Without an episode, movies play directly and series open their title page.
 
 ```yaml
 action: assist_google_tv.netflix_play

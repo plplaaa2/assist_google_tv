@@ -65,7 +65,7 @@ Cast 전용 모드에서는 `entity_id`에 `media_player`를 지정합니다. `c
 
 ### Netflix 작품 열기
 
-작품명과 Android TV Remote 엔티티를 지정합니다. 특정 시즌의 회차는 `season`과 `episode`를 함께 입력하고, 시즌 없이 회차만 지정하면 Netflix의 전체 누적 회차 번호로 찾습니다. 회차를 지정하지 않으면 영화는 바로 재생하고 시리즈는 작품 페이지를 엽니다.
+작품명과 Android TV Remote 엔티티를 지정합니다. 화면 보호기가 전면에 있으면 Netflix를 열기 전에 닫습니다. 특정 시즌의 회차는 `season`과 `episode`를 함께 입력하고, 시즌 없이 회차만 지정하면 Netflix의 전체 누적 회차 번호로 찾습니다. 회차를 지정하지 않으면 영화는 바로 재생하고 시리즈는 작품 페이지를 엽니다.
 
 ```yaml
 action: assist_google_tv.netflix_play

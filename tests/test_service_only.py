@@ -10,7 +10,7 @@ import sys
 import tempfile
 from types import ModuleType, SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 import uuid
 
 import aiohttp
@@ -441,6 +441,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 "entity_id": "remote.tv",
                 "activity": "https://www.netflix.com/watch/82656797?source=30",
             }, blocking=True,
+        )
+
+    async def test_netflix_play_dismisses_foreground_screensaver_before_launch(self):
+        self.states["remote.tv"] = SimpleNamespace(
+            entity_id="remote.tv", state="on",
+            attributes={"current_activity": "com.google.android.apps.tv.dreamx/.service.Backdrop"},
+        )
+        with patch.object(services, "_async_netflix_title_id", AsyncMock(return_value="81161626")), \
+                patch.object(services, "_async_netflix_is_movie", AsyncMock(return_value=True)):
+            await self.hass.services.invoke("netflix_play", {
+                "query": "Red Notice", "entity_id": "remote.tv",
+            })
+        self.assertEqual(
+            self.hass.services.async_call.await_args_list,
+            [
+                call("remote", "send_command", {
+                    "entity_id": "remote.tv", "command": "BACK",
+                }, blocking=True),
+                call("remote", "turn_on", {
+                    "entity_id": "remote.tv",
+                    "activity": "https://www.netflix.com/watch/81161626?source=30",
+                }, blocking=True),
+            ],
         )
 
     async def test_netflix_movie_without_episode_opens_watch_link(self):
