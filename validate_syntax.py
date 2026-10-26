@@ -83,7 +83,7 @@ def _check_file(filepath):
 
 
 # Main loop — check every .py file in the component directory.
-component_dir = "custom_components/youtube_content_search"
+component_dir = "custom_components/assist_google_tv"
 
 issues_found = False
 

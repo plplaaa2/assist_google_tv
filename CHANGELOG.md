@@ -2,6 +2,13 @@
 
 Notable changes to Assist Google TV are documented here.
 
+## [1.1.8-dev] - 2026-10-26
+
+- Rename the custom integration folder and domain to `assist_google_tv`.
+- Update action and Assist tool IDs to the new domain; existing automations and selected providers must be updated.
+- Preserve the previous playlist storage key and playlist state IDs.
+- Document the required config-entry and API-key reconfiguration after upgrading.
+
 ## [1.1.0] - 2026-10-18
 
 - Play a specific YouTube video directly from a supported video URL or 11-character video ID in actions and Assist tools.

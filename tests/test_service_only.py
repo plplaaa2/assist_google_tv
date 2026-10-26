@@ -108,10 +108,11 @@ for name, attributes in modules.items():
     module.__path__ = []
     sys.modules[name] = module
 
-integration = importlib.import_module("custom_components.youtube_content_search")
-services = importlib.import_module("custom_components.youtube_content_search.services")
-flows = importlib.import_module("custom_components.youtube_content_search.config_flow")
-llm_tools = importlib.import_module("custom_components.youtube_content_search.llm")
+integration = importlib.import_module("custom_components.assist_google_tv")
+services = importlib.import_module("custom_components.assist_google_tv.services")
+flows = importlib.import_module("custom_components.assist_google_tv.config_flow")
+llm_tools = importlib.import_module("custom_components.assist_google_tv.llm")
+playlist_store = importlib.import_module("custom_components.assist_google_tv.playlist_store")
 
 
 class Registry:
@@ -120,7 +121,7 @@ class Registry:
         self.async_call = AsyncMock()
 
     def has_service(self, domain, name):
-        return domain == "youtube_content_search" and name in self.actions
+        return domain == "assist_google_tv" and name in self.actions
 
     def async_register(self, domain, name, handler, schema):
         self.actions[name] = (handler, schema)
@@ -131,6 +132,10 @@ class Registry:
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_manifest_domain_matches_integration_folder(self):
+        manifest = json.loads((ROOT / "custom_components/assist_google_tv/manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["domain"], "assist_google_tv")
+
     async def asyncSetUp(self):
         self.storage_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.storage_dir.cleanup)
@@ -200,7 +205,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         response = await result.tools[0].async_call(self.hass, SimpleNamespace(tool_args=args), context)
         self.assertEqual(response.data["status"], "playback_requested")
         self.hass.services.async_call.assert_awaited_once_with(
-            "youtube_content_search", "search_play", args, blocking=True, context=context.context,
+            "assist_google_tv", "search_play", args, blocking=True, context=context.context,
         )
         self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "other_api"))
         self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
@@ -252,8 +257,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.entry.async_on_unload = callbacks.append
         with patch.object(llm_tools.llm, "async_register_api", register):
             await integration.async_setup_entry(self.hass, self.entry)
-            self.assertEqual(providers["youtube_content_search"].name, "Assist Google TV (YouTube)")
-            self.assertEqual(providers["youtube_content_search_netflix"].name, "Assist Google TV (Netflix)")
+            self.assertEqual(providers["assist_google_tv"].name, "Assist Google TV (YouTube)")
+            self.assertEqual(providers["assist_google_tv_netflix"].name, "Assist Google TV (Netflix)")
             await integration._async_update_options(self.hass, self.entry)
             self.assertEqual(len(providers), 2)
             await integration.async_unload_entry(self.hass, self.entry)
@@ -264,7 +269,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             # Registration also works without the newer native LLM platform.
             with patch.dict(sys.modules["homeassistant.components.llm"].__dict__, clear=True):
                 await integration.async_setup_entry(self.hass, self.entry)
-                self.assertIn("youtube_content_search", providers)
+                self.assertIn("assist_google_tv", providers)
                 for cleanup in callbacks:
                     cleanup()
                 self.assertEqual(providers, {})
@@ -277,12 +282,12 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             llm_tools.async_register_api(self.hass, self.entry)
             self.assertEqual(register.call_count, 2)
             apis = [call.args[1] for call in register.call_args_list]
-            self.assertEqual([api.id for api in apis], ["youtube_content_search", "youtube_content_search_netflix"])
+            self.assertEqual([api.id for api in apis], ["assist_google_tv", "assist_google_tv_netflix"])
             self.entry.async_on_unload.assert_any_call(register.return_value)
             api = apis[0]
             instance = await api.async_get_api_instance(context)
             self.assertEqual(len(instance.tools), 1)
-            self.assertEqual(api.id, "youtube_content_search")
+            self.assertEqual(api.id, "assist_google_tv")
             with patch.dict(sys.modules["homeassistant.helpers.llm"].__dict__):
                 del sys.modules["homeassistant.helpers.llm"].ToolResult
                 result = await instance.tools[0].async_call(
@@ -298,16 +303,16 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data[services.DOMAIN].pop("api_key")
         api = llm_tools.NetflixAPI(self.hass)
         instance = await api.async_get_api_instance(context)
-        self.assertEqual(api.name, "Netflix Content Search")
+        self.assertEqual(api.name, "Assist Google TV (Netflix)")
         self.assertEqual(len(instance.tools), 1)
-        self.assertEqual(instance.tools[0].name, "youtube_content_search__netflix_play")
+        self.assertEqual(instance.tools[0].name, "assist_google_tv__netflix_play")
         args = {"query": "Frieren", "season": 2, "episode": 8, "entity_id": "remote.tv"}
         result = await instance.tools[0].async_call(
             self.hass, SimpleNamespace(tool_args=args), context,
         )
         self.assertEqual(result.data["status"], "playback_requested")
         self.hass.services.async_call.assert_awaited_once_with(
-            "youtube_content_search", "netflix_play", args, blocking=True, context=context.context,
+            "assist_google_tv", "netflix_play", args, blocking=True, context=context.context,
         )
 
     async def test_setup_and_options_without_frontend(self):
@@ -648,6 +653,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await self._restart()
         videos = json.loads(self.states["youtube_content_search._playlist_music"].attributes["data"])
         self.assertEqual([v["videoId"] for v in videos], ["dQw4w9WgXcQ"])
+
+    async def test_renamed_domain_keeps_legacy_playlist_storage_contract(self):
+        self.assertEqual(services.DOMAIN, "assist_google_tv")
+        self.assertEqual(playlist_store.STORAGE_KEY, "youtube_content_search.playlists")
+        self.assertEqual(playlist_store._ENTITY_PREFIX, "youtube_content_search._playlist_")
 
     async def test_deletion_survives_restart(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):

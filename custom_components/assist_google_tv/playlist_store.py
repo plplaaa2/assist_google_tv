@@ -8,12 +8,12 @@ import re
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN
+from .const import LEGACY_DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-STORAGE_KEY = f"{DOMAIN}.playlists"
+STORAGE_KEY = f"{LEGACY_DOMAIN}.playlists"
 DATA_PLAYLIST_STORE = "playlist_store"
-_ENTITY_PREFIX = f"{DOMAIN}._playlist_"
+_ENTITY_PREFIX = f"{LEGACY_DOMAIN}._playlist_"
 
 
 class PlaylistStore:

@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN, CONF_API_KEY
+from .const import DOMAIN, LEGACY_DOMAIN, CONF_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class YouTubeContentSearchOptionsFlow:
     
     def __init__(self, hass: HomeAssistant):
         self.hass = hass
-        self.store_key = f"{DOMAIN}_options"
+        self.store_key = f"{LEGACY_DOMAIN}_options"
 
     @property
     def store(self) -> Store:
