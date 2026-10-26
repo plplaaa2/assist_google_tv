@@ -1,4 +1,4 @@
-search_play:
+youtube_search_play:
   name: YouTube 검색 재생
   description: 검색어로 YouTube 영상을 찾거나 영상 URL/ID로 지정해 설정한 앱 링크 후 Cast fallback 또는 Cast만 재생합니다. query와 video 중 하나만 입력하세요.
   fields:
@@ -74,7 +74,7 @@ netflix_play:
             - domain: remote
               integration: androidtv_remote
 
-playlist_save:
+youtube_playlist_save:
   name: 플레이리스트에 동영상 추가
   description: 영상 정보를 조회해 HA 내부 재생목록에 영구 저장합니다. YouTube 계정은 변경하지 않으며 HA 재시작 후에도 복원됩니다.
   fields:
@@ -93,7 +93,7 @@ playlist_save:
       selector:
         text:
 
-playlist_delete:
+youtube_playlist_delete:
   name: 플레이리스트 삭제
   description: 지정된 HA 내부 재생목록을 영구 삭제합니다. YouTube 계정은 변경하지 않습니다.
   fields:

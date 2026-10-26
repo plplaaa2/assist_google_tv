@@ -23,7 +23,7 @@ Assist 음성 명령을 중심으로 Home Assistant 액션에서 YouTube 영상�
 
 `custom_components/assist_google_tv` 폴더만 HA의 `/config/custom_components/assist_google_tv`로 복사합니다.
 
-**마이그레이션 안내:** 이번 버전에서 Home Assistant 통합 도메인이 변경됩니다. 기존 YouTube Content Search 설정 항목을 제거하고 Assist Google TV를 다시 추가한 뒤 YouTube API 키를 입력하세요. 기존 액션의 `youtube_content_search.*`를 `assist_google_tv.*`로 바꾸고 Assist 공급자를 새 이름으로 다시 선택해야 합니다. 저장된 재생목록 파일 `.storage/youtube_content_search.playlists`와 `youtube_content_search._playlist_*` 상태 ID는 유지됩니다.
+**마이그레이션 안내:** 이번 버전에서 Home Assistant 통합 도메인과 YouTube 액션명이 변경됩니다. 기존 YouTube Content Search 설정 항목을 제거하고 Assist Google TV를 다시 추가한 뒤 YouTube API 키를 입력하세요. `youtube_content_search.search_play`, `youtube_content_search.playlist_save`, `youtube_content_search.playlist_delete`를 각각 `assist_google_tv.youtube_search_play`, `assist_google_tv.youtube_playlist_save`, `assist_google_tv.youtube_playlist_delete`로 바꾸세요. `youtube_content_search.netflix_play`는 `assist_google_tv.netflix_play`로 바꾸고 Assist 공급자도 새 이름으로 다시 선택해야 합니다. 저장된 재생목록 파일 `.storage/youtube_content_search.playlists`와 `youtube_content_search._playlist_*` 상태 ID는 유지됩니다.
 
 
 ### 설정 방법
@@ -43,7 +43,7 @@ Assist 음성 명령을 중심으로 Home Assistant 액션에서 YouTube 영상�
 앱 링크 방식은 Android TV Remote의 `remote` 엔티티와 Google Cast의 `media_player`를 모두 지정해야 합니다. `entity_id`에는 remote, `cast_entity_id`에는 fallback Cast 플레이어를 사용합니다. SmartTube는 YouTube 딥링크로 열며, TV의 앱 선택 화면에서 SmartTube를 기본 앱으로 지정해야 할 수 있습니다.
 
 ```yaml
-action: assist_google_tv.search_play
+action: assist_google_tv.youtube_search_play
 data:
   query: "아이유 라이브"
   entity_id: remote.living_room_tv
@@ -53,7 +53,7 @@ data:
 검색 없이 특정 영상을 재생하려면 `query` 대신 `video`에 YouTube 영상 URL 또는 11자리 영상 ID를 지정합니다. `query`와 `video`는 둘 중 하나만 입력합니다.
 
 ```yaml
-action: assist_google_tv.search_play
+action: assist_google_tv.youtube_search_play
 data:
   video: "https://youtu.be/dQw4w9WgXcQ"
   entity_id: remote.living_room_tv
@@ -84,7 +84,7 @@ data:
 3. YouTube만 쓰려면 YouTube 공급자만, Netflix만 쓰려면 Netflix 공급자만 선택하세요. 기본 **Assist** API에는 도구를 자동 추가하지 않습니다.
 4. 해당 대화 에이전트를 사용하는 음성 어시스턴트에 “거실 TV에서 유튜브 아이유 라이브 틀어줘”처럼 요청합니다.
 
-도구 이름은 `assist_google_tv__search_play`이며 입력은 검색어 `query` 또는 영상 URL/ID `video`와 `entity_id`입니다. `query`와 `video`는 하나만 지정합니다.
+도구 이름은 `assist_google_tv__youtube_search_play`이며 입력은 검색어 `query` 또는 영상 URL/ID `video`와 `entity_id`입니다. `query`와 `video`는 하나만 지정합니다.
 앱 링크 방식은 Android TV Remote와 Google Cast 대상 두 개를 전달합니다. 두 엔티티의 통합 소속을 실행 직전에 확인합니다.
 대상이 모호하면 에이전트가 되묻도록 안내합니다. 대상 TV는 설정한 재생 방식의 통합으로 연결되어 있어야 합니다.
 Netflix 도구 이름은 `assist_google_tv__netflix_play`이며 `query`, Android TV Remote `entity_id`와 선택적인 `season`·`episode`를 받습니다. YouTube 도구와 별도로 선택할 수 있고, YouTube API 키를 사용하지 않습니다.
@@ -113,7 +113,7 @@ YouTube 계정은 변경하지 않습니다. 영상 정보를 조회해 HA 내�
 관리 UI는 다음 단계에서 결정하며, 현재는 기존 액션과 개발자 도구 → 상태를 사용합니다.
 
 ```yaml
-action: assist_google_tv.playlist_save
+action: assist_google_tv.youtube_playlist_save
 data:
   playlist_id: "my_music"
   video_ids:
@@ -125,7 +125,7 @@ data:
 개발자 도구 → 상태에서 `youtube_content_search._playlist_my_music`의 `data` 속성을 확인합니다.
 
 ```yaml
-action: assist_google_tv.playlist_delete
+action: assist_google_tv.youtube_playlist_delete
 data:
   id: "my_music"
 ```

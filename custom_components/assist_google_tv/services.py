@@ -776,7 +776,7 @@ async def async_setup_services(hass: HomeAssistant):
         await async_playlist_delete_service(hass, call)
 
     actions = {
-        "search_play": (_search_play, vol.Schema({
+        "youtube_search_play": (_search_play, vol.Schema({
             vol.Optional("query"): cv.string,
             vol.Optional("video"): cv.string,
         vol.Required("entity_id"): cv.entity_id,
@@ -788,11 +788,11 @@ async def async_setup_services(hass: HomeAssistant):
             vol.Optional("season"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Optional("episode"): vol.All(vol.Coerce(int), vol.Range(min=1)),
         })),
-        "playlist_save": (_playlist_save_service, vol.Schema({
+        "youtube_playlist_save": (_playlist_save_service, vol.Schema({
             vol.Required("playlist_id"): cv.string,
             vol.Required("video_ids"): _normalize_video_ids,
         })),
-        "playlist_delete": (_playlist_delete_service, vol.Schema({vol.Required("id"): cv.string})),
+        "youtube_playlist_delete": (_playlist_delete_service, vol.Schema({vol.Required("id"): cv.string})),
     }
     for name, (handler, schema) in actions.items():
         if not hass.services.has_service(DOMAIN, name):
@@ -802,9 +802,9 @@ async def async_setup_services(hass: HomeAssistant):
 async def async_unload_services(hass: HomeAssistant):
     """Unregister legacy service functions."""
     try:
-        hass.services.async_remove(DOMAIN, "search_play")
+        hass.services.async_remove(DOMAIN, "youtube_search_play")
         hass.services.async_remove(DOMAIN, "netflix_play")
-        hass.services.async_remove(DOMAIN, "playlist_save")
-        hass.services.async_remove(DOMAIN, "playlist_delete")
+        hass.services.async_remove(DOMAIN, "youtube_playlist_save")
+        hass.services.async_remove(DOMAIN, "youtube_playlist_delete")
     except Exception as err:
         _LOGGER.error("Assist Google TV services unload failed: %s", err, exc_info=True)

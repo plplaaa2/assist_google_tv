@@ -23,7 +23,7 @@ Click the badge above and install the integration.
 
 Copy only the `custom_components/assist_google_tv` folder to `/config/custom_components/assist_google_tv` in Home Assistant.
 
-**Migration note:** This release changes the Home Assistant integration domain. Remove the old YouTube Content Search config entry and add Assist Google TV again, then enter the YouTube API key. Update existing actions from `youtube_content_search.*` to `assist_google_tv.*` and select the new Assist providers again. Saved playlist data remains in `.storage/youtube_content_search.playlists` and retains its `youtube_content_search._playlist_*` state IDs.
+**Migration note:** This release changes the Home Assistant integration domain and YouTube action names. Remove the old YouTube Content Search config entry and add Assist Google TV again, then enter the YouTube API key. Update `youtube_content_search.search_play`, `youtube_content_search.playlist_save`, and `youtube_content_search.playlist_delete` to `assist_google_tv.youtube_search_play`, `assist_google_tv.youtube_playlist_save`, and `assist_google_tv.youtube_playlist_delete`. Update `youtube_content_search.netflix_play` to `assist_google_tv.netflix_play`, then select the new Assist providers again. Saved playlist data remains in `.storage/youtube_content_search.playlists` and retains its `youtube_content_search._playlist_*` state IDs.
 
 ### Configure
 
@@ -41,7 +41,7 @@ Call the action from **Developer tools → Actions**, an automation, or a script
 Android TV app modes send a video deep link to an Android TV Remote `remote` entity and use `cast_entity_id` for the Google Cast `media_player` fallback. SmartTube mode uses its `vnd.youtube.launch` link. Deep-link handling can vary by device and app version.
 
 ```yaml
-action: assist_google_tv.search_play
+action: assist_google_tv.youtube_search_play
 data:
   query: "IU live"
   entity_id: media_player.living_room_tv # use remote.living_room_tv for app-link mode
@@ -50,7 +50,7 @@ data:
 To play a specific video without searching, use `video` with a YouTube video URL or 11-character video ID instead of `query`. Provide exactly one of `query` or `video`.
 
 ```yaml
-action: assist_google_tv.search_play
+action: assist_google_tv.youtube_search_play
 data:
   video: "https://youtu.be/dQw4w9WgXcQ"
   entity_id: media_player.living_room_tv # use remote.living_room_tv for app-link mode
@@ -80,7 +80,7 @@ Install the updated integration and restart Home Assistant. You need an LLM conv
 3. Select only YouTube for YouTube playback, only Netflix for Netflix playback, or both. Neither provider's tools are added automatically to the built-in **Assist** API.
 4. Ask the voice assistant using that agent, for example, “Play IU live on the living room TV.”
 
-The tool is named `assist_google_tv__search_play`. It accepts either `query` (search terms) or `video` (a YouTube video URL or ID), plus `entity_id`. Specify only one of `query` and `video`.
+The tool is named `assist_google_tv__youtube_search_play`. It accepts either `query` (search terms) or `video` (a YouTube video URL or ID), plus `entity_id`. Specify only one of `query` and `video`.
 
 Assist receives targets for the selected playback mode and checks integration ownership again before calling the action. App-link modes require both the Android TV Remote and Cast player.
 
@@ -103,7 +103,7 @@ The storage file is `.storage/youtube_content_search.playlists` in the Home Assi
 If legacy temporary playlist states exist and there is no storage file, the first initialization imports them. Temporary states already lost after a Home Assistant restart cannot be recovered by updating the integration. A playlist management UI is not currently provided; use the actions and **Developer tools → States**.
 
 ```yaml
-action: assist_google_tv.playlist_save
+action: assist_google_tv.youtube_playlist_save
 data:
   playlist_id: "my_music"
   video_ids:
@@ -114,7 +114,7 @@ data:
 `video_ids` accepts a YAML list, comma-separated string, or JSON array string. To inspect a playlist, open `youtube_content_search._playlist_my_music` in **Developer tools → States** and check its `data` attribute.
 
 ```yaml
-action: assist_google_tv.playlist_delete
+action: assist_google_tv.youtube_playlist_delete
 data:
   id: "my_music"
 ```

@@ -47,7 +47,7 @@ def _android_tv_remotes(hass, llm_context):
 class YouTubeSearchPlayTool(llm.Tool):
     """Delegate playback through the existing validated service."""
 
-    name = f"{DOMAIN}__search_play"
+    name = f"{DOMAIN}__youtube_search_play"
     title = "YouTube 검색 재생"
     integration = DOMAIN
     description = "Search YouTube with query, or play a YouTube URL/video ID directly. Provide exactly one of query or video."
@@ -81,7 +81,7 @@ class YouTubeSearchPlayTool(llm.Tool):
                 raise ServiceValidationError("Choose a Google Cast fallback player")
         try:
             await hass.services.async_call(
-                DOMAIN, "search_play", args, blocking=True, context=llm_context.context,
+                DOMAIN, "youtube_search_play", args, blocking=True, context=llm_context.context,
             )
         except HomeAssistantError:
             # Never forward backend exception text to an LLM; related: services.py.
@@ -158,7 +158,7 @@ def _tool_data(hass, llm_context):
             "cast_entity_id_options": cast_targets,
         } for target in targets]
     prompt = (
-        "Use the YouTube search_play tool when asked to play a YouTube video. "
+        "Use the YouTube youtube_search_play tool when asked to play a YouTube video. "
         "Provide exactly one of query (search terms) or video (YouTube video URL or 11-character video ID). "
         + ("Try the selected Android TV app first, then Google Cast if it reports an error. Include remote entity_id and cast_entity_id. "
            if playback_mode(hass) in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))

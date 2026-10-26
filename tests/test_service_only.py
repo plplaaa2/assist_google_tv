@@ -182,7 +182,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 )
             with patch.object(services, "_async_youtube_request", AsyncMock()) as request:
                 with self.assertRaises(HAError):
-                    await self.hass.services.invoke("search_play", {"query": "music", "entity_id": entity})
+                    await self.hass.services.invoke("youtube_search_play", {"query": "music", "entity_id": entity})
                 request.assert_not_awaited()
         self.hass.services.async_call.assert_not_awaited()
 
@@ -205,8 +205,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         response = await result.tools[0].async_call(self.hass, SimpleNamespace(tool_args=args), context)
         self.assertEqual(response.data["status"], "playback_requested")
         self.hass.services.async_call.assert_awaited_once_with(
-            "assist_google_tv", "search_play", args, blocking=True, context=context.context,
+            "assist_google_tv", "youtube_search_play", args, blocking=True, context=context.context,
         )
+        self.assertEqual(result.tools[0].name, "assist_google_tv__youtube_search_play")
         self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "other_api"))
         self.assertIsNone(llm_tools.async_get_tools(self.hass, context, "assist"))
 
@@ -430,7 +431,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_video_search_and_cast_payload(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": [{"id": {"videoId": "dQw4w9WgXcQ"}}]})) as request:
-            await self.hass.services.invoke("search_play", {"query": " music ", "entity_id": "media_player.tv"})
+            await self.hass.services.invoke("youtube_search_play", {"query": " music ", "entity_id": "media_player.tv"})
         self.assertEqual(request.call_args.args[2]["type"], "video")
         self.assertEqual(request.call_args.args[2]["q"], "music")
         args = self.hass.services.async_call.call_args
@@ -441,7 +442,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_app_link_playback_sends_youtube_url_to_remote(self):
         self.hass.data[services.DOMAIN]["playback_mode"] = "youtube_app_fallback"
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": [{"id": {"videoId": "dQw4w9WgXcQ"}}]})):
-            await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "remote.tv"})
+            await self.hass.services.invoke("youtube_search_play", {"query": "music", "entity_id": "remote.tv"})
         self.hass.services.async_call.assert_awaited_once_with(
             "remote", "turn_on", {
                 "entity_id": "remote.tv",
@@ -464,7 +465,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data[services.DOMAIN]["playback_mode"] = "smarttube_fallback"
         with patch.object(services, "_async_youtube_request", AsyncMock()):
             await self.hass.services.invoke(
-                "search_play", {"video": "dQw4w9WgXcQ", "entity_id": "remote.tv"},
+                "youtube_search_play", {"video": "dQw4w9WgXcQ", "entity_id": "remote.tv"},
             )
         self.hass.services.async_call.assert_awaited_once_with(
             "remote", "turn_on", {
@@ -477,7 +478,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data[services.DOMAIN]["playback_mode"] = "cast_fallback"
         self.hass.services.async_call.side_effect = [HAError("link could not be opened"), None]
         with patch.object(services, "_async_youtube_request", AsyncMock()) as request:
-            await self.hass.services.invoke("search_play", {
+            await self.hass.services.invoke("youtube_search_play", {
                 "video": "dQw4w9WgXcQ", "entity_id": "remote.tv",
                 "cast_entity_id": "media_player.tv",
             })
@@ -493,7 +494,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data[services.DOMAIN]["playback_mode"] = "youtube_app_fallback"
         self.hass.services.async_call.side_effect = [HAError("remote failed"), None]
         with patch.object(services, "_async_youtube_request", AsyncMock()):
-            await self.hass.services.invoke("search_play", {
+            await self.hass.services.invoke("youtube_search_play", {
                 "video": "dQw4w9WgXcQ", "entity_id": "remote.tv",
                 "cast_entity_id": "media_player.tv",
             })
@@ -505,7 +506,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data[services.DOMAIN]["playback_mode"] = "cast_fallback"
         self.hass.services.async_call.side_effect = HAError("failed")
         with self.assertRaisesRegex(HAError, "valid Cast fallback entity"):
-            await self.hass.services.invoke("search_play", {
+            await self.hass.services.invoke("youtube_search_play", {
                 "video": "dQw4w9WgXcQ", "entity_id": "remote.tv",
             })
         self.assertEqual(self.hass.services.async_call.await_count, 1)
@@ -520,7 +521,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             "https://youtube.com/live/dQw4w9WgXcQ",
         ]:
             with self.subTest(value=value), patch.object(services, "_async_youtube_request", AsyncMock()) as request:
-                await self.hass.services.invoke("search_play", {"video": value, "entity_id": "media_player.tv"})
+                await self.hass.services.invoke("youtube_search_play", {"video": value, "entity_id": "media_player.tv"})
                 request.assert_not_awaited()
                 args = self.hass.services.async_call.call_args
                 self.assertEqual(
@@ -537,32 +538,32 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             {"entity_id": "media_player.tv"},
         ]:
             with self.subTest(data=data), self.assertRaises(HAError):
-                await self.hass.services.invoke("search_play", data)
+                await self.hass.services.invoke("youtube_search_play", data)
 
     async def test_empty_results_and_unconfigured_actions(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
             with self.assertRaises(HAError):
-                await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "media_player.tv"})
+                await self.hass.services.invoke("youtube_search_play", {"query": "music", "entity_id": "media_player.tv"})
         await integration.async_unload_entry(self.hass, self.entry)
         with self.assertRaises(HAError):
-            await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "media_player.tv"})
+            await self.hass.services.invoke("youtube_search_play", {"query": "music", "entity_id": "media_player.tv"})
 
     async def test_input_validation(self):
         with self.assertRaises(HAError):
-            await self.hass.services.invoke("search_play", {"query": "music", "entity_id": "light.room"})
+            await self.hass.services.invoke("youtube_search_play", {"query": "music", "entity_id": "light.room"})
         with self.assertRaises(HAError):
-            await self.hass.services.invoke("search_play", {"query": " ", "entity_id": "media_player.tv"})
+            await self.hass.services.invoke("youtube_search_play", {"query": " ", "entity_id": "media_player.tv"})
         with self.assertRaises(vol.Invalid):
-            await self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": "invalid"})
+            await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "music", "video_ids": "invalid"})
 
     async def test_playlist_merge_csv_list_and_delete(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})) as request:
-            await self.hass.services.invoke("playlist_save", {"playlist_id": "my-list", "video_ids": "dQw4w9WgXcQ,dQw4w9WgXcQ"})
-            await self.hass.services.invoke("playlist_save", {"playlist_id": "my-list", "video_ids": ["jNQXAC9IVRw"]})
+            await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "my-list", "video_ids": "dQw4w9WgXcQ,dQw4w9WgXcQ"})
+            await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "my-list", "video_ids": ["jNQXAC9IVRw"]})
         self.assertEqual(request.call_args.args[1], "videos")
         state = self.states["youtube_content_search._playlist_my_list"]
         self.assertEqual(len(json.loads(state.attributes["data"])), 2)
-        await self.hass.services.invoke("playlist_delete", {"id": "my-list"})
+        await self.hass.services.invoke("youtube_playlist_delete", {"id": "my-list"})
         self.assertFalse(self.states)
 
     async def test_network_failure_does_not_expose_url(self):
@@ -649,7 +650,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_persist_and_restore_after_restart(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
-            await self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
+            await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
         await self._restart()
         videos = json.loads(self.states["youtube_content_search._playlist_music"].attributes["data"])
         self.assertEqual([v["videoId"] for v in videos], ["dQw4w9WgXcQ"])
@@ -661,15 +662,15 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_deletion_survives_restart(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
-            await self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
-        await self.hass.services.invoke("playlist_delete", {"id": "music"})
+            await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
+        await self.hass.services.invoke("youtube_playlist_delete", {"id": "music"})
         await self._restart()
         self.assertFalse(self.states)
 
     async def test_concurrent_saves_survive_restart(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
             await asyncio.gather(*[
-                self.hass.services.invoke("playlist_save", {"playlist_id": "music", "video_ids": [video]})
+                self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "music", "video_ids": [video]})
                 for video in ["dQw4w9WgXcQ", "jNQXAC9IVRw", "dQw4w9WgXcQ"]
             ])
         await self._restart()

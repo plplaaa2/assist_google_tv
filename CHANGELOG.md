@@ -2,6 +2,12 @@
 
 Notable changes to Assist Google TV are documented here.
 
+## [1.1.9-dev] - 2026-10-26
+
+- Prefix YouTube search and playlist action IDs with `youtube_` to make their purpose clear alongside Netflix actions.
+- Rename the YouTube Assist tool to `assist_google_tv__youtube_search_play`.
+- Document the updated action IDs and migration from the previous names.
+
 ## [1.1.8-dev] - 2026-10-26
 
 - Rename the custom integration folder and domain to `assist_google_tv`.
