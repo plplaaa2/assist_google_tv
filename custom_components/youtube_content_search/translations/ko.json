@@ -2,9 +2,10 @@
   "config": {
     "step": {
       "user": {
-        "title": "YouTube Content Search",
+        "title": "Assist Google TV",
         "data": {
-          "api_key": "YouTube API 키"
+          "api_key": "YouTube API 키",
+          "playback_mode": "재생 방식 (YouTube 앱 또는 SmartTube, 실패 시 Cast)"
         }
       }
     },
@@ -18,9 +19,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "YouTube Content Search",
+        "title": "Assist Google TV",
         "data": {
-          "api_key": "YouTube API 키"
+          "api_key": "YouTube API 키",
+          "playback_mode": "재생 방식 (YouTube 앱 또는 SmartTube, 실패 시 Cast)"
         }
       }
     },

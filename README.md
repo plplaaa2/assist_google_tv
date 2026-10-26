@@ -1,4 +1,4 @@
-# YouTube Content Search
+# Assist Google TV
 
 [English](README.md) | [한국어](README.ko.md)
 
@@ -8,41 +8,41 @@
 ![version](https://img.shields.io/badge/version-v1.1.0-blue.svg?style=for-the-badge)
 [![kofi](https://img.shields.io/badge/Ko--fi-Support%20Me-F16061?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/plplaaa2)
 
-Search YouTube videos and request playback on Google Cast devices through Home Assistant actions.
+Use Assist voice commands to search and play YouTube videos or open Netflix titles and episodes through Home Assistant actions and Android TV app links.
 The sidebar panel and HTTP search endpoints are currently inactive.
 
 ## Installation and setup
 
 ### Automatic installation (recommended)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=plplaaa2&repository=https%3A%2F%2Fgithub.com%2Fplplaaa2%2Fyoutube_content_search&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=plplaaa2&repository=https%3A%2F%2Fgithub.com%2Fplplaaa2%2Fassist_google_tv&category=integration)
 
 Click the badge above and install the integration.
 
 ### Manual installation
 
-Copy only the `custom_components/youtube_content_search` folder to `/config/custom_components/youtube_content_search` in Home Assistant.
+Copy only the `custom_components/youtube_content_search` folder to `/config/custom_components/youtube_content_search` in Home Assistant. The folder and integration domain retain their existing IDs for compatibility.
 
 ### Configure
 
 1. Enable YouTube Data API v3 in Google Cloud and prepare an API key.
-2. Set up the Google Cast integration and identify the target `media_player` entity.
-3. Restart Home Assistant, then add YouTube Content Search from **Settings → Devices & services → Add integration**.
-4. Enter the API key in the integration configuration. Option changes apply to subsequent actions.
+2. Set up Google Cast and/or Android TV Remote. Android TV app modes require an Android TV Remote `remote` entity.
+3. Restart Home Assistant, then add Assist Google TV from **Settings → Devices & services → Add integration**.
+4. Enter the API key and playback mode in the integration configuration. Option changes apply to subsequent actions.
 
 The key is stored in the Home Assistant config entry; this integration does not provide additional encryption. You do not need to put the actual key in automation YAML.
 
 ## Search and play
 
-Call the action from **Developer tools → Actions**, an automation, or a script. It plays the first matching video; playlist search is not supported. Playback requires a Google Cast device that supports the YouTube app.
+Call the action from **Developer tools → Actions**, an automation, or a script. It plays the first matching video; playlist search is not supported. Select official YouTube app to Cast fallback, SmartTube to Cast fallback, or Google Cast only in the integration options. App-link modes request Cast playback if the remote action returns an error.
 
-The action's device selector lists only `media_player` entities from the Google Cast integration. YAML targets are also checked before searching: entities without a registered `cast` platform are rejected. Remove the legacy `playback_mode` field from existing automations if you added it.
+Android TV app modes send a video deep link to an Android TV Remote `remote` entity and use `cast_entity_id` for the Google Cast `media_player` fallback. SmartTube mode uses its `vnd.youtube.launch` link. Deep-link handling can vary by device and app version.
 
 ```yaml
 action: youtube_content_search.search_play
 data:
   query: "IU live"
-  entity_id: media_player.living_room_tv
+  entity_id: media_player.living_room_tv # use remote.living_room_tv for app-link mode
 ```
 
 To play a specific video without searching, use `video` with a YouTube video URL or 11-character video ID instead of `query`. Provide exactly one of `query` or `video`.
@@ -51,27 +51,44 @@ To play a specific video without searching, use `video` with a YouTube video URL
 action: youtube_content_search.search_play
 data:
   video: "https://youtu.be/dQw4w9WgXcQ"
-  entity_id: media_player.living_room_tv
+  entity_id: media_player.living_room_tv # use remote.living_room_tv for app-link mode
 ```
+
+## Open Netflix titles
+
+The `netflix_play` action searches the web for a Netflix title ID and opens it through Android TV Remote. Provide both season and episode to open a specific episode.
+
+```yaml
+action: youtube_content_search.netflix_play
+data:
+  query: "Frieren: Beyond Journey's End"
+  season: 2
+  episode: 8
+  entity_id: remote.living_room_tv
+```
+
+Omit season and episode to play a movie directly or open a series title page. The integration reads Netflix title metadata to distinguish movies from series; if that lookup fails, it safely opens the title page. Netflix lookup runs its own DuckDuckGo HTML search client, based on Assist Web Search's request, challenge detection, browser-fingerprint retry and structured result parsing. It does not require Assist Web Search to be installed. Search challenges or markup changes are reported as lookup errors. If search returns multiple matches, the first Netflix link is used. Episode IDs are extracted from the Netflix page and grouped into seasons by consecutive ID ranges.
 
 ## Connect the Assist tool
 
 Install the updated integration and restart Home Assistant. You need an LLM conversation agent that supports tool calls.
 
-1. In **Settings → Voice assistants**, expose the target `media_player` to Assist.
-2. In the conversation agent settings, select **YouTube Content Search** from **Tool providers** or **Control Home Assistant / LLM API**. The integration registers a separate LLM API when it loads.
-3. If the agent supports multiple APIs, you may also select the built-in **Assist** API. YouTube tools are available only through **YouTube Content Search** and are not added to the built-in Assist API.
+1. In **Settings → Voice assistants**, expose both the Android TV Remote and Cast player to Assist.
+2. In the conversation agent settings, select **Assist Google TV (YouTube)** and/or **Assist Google TV (Netflix)** under **Tool providers** or **Control Home Assistant / LLM API**. They are registered as separate providers.
+3. Select only YouTube for YouTube playback, only Netflix for Netflix playback, or both. Neither provider's tools are added automatically to the built-in **Assist** API.
 4. Ask the voice assistant using that agent, for example, “Play IU live on the living room TV.”
 
 The tool is named `youtube_content_search__search_play`. It accepts either `query` (search terms) or `video` (a YouTube video URL or ID), plus `entity_id`. Specify only one of `query` and `video`.
 
-Assist receives Google Cast media players using the same Cast integration criterion as the action selector, and the integration checks Cast ownership again before calling the action. The agent should ask when the requested player is ambiguous. The target must support the YouTube app.
+Assist receives targets for the selected playback mode and checks integration ownership again before calling the action. App-link modes require both the Android TV Remote and Cast player.
+
+The Netflix tool is named `youtube_content_search__netflix_play`. It accepts a title `query`, an Android TV Remote `entity_id`, and optional `season` and `episode` values. It is independent of the YouTube tool and does not use the YouTube API key.
 
 A successful response means the playback request was sent; it does not confirm that video or audio actually started. Saving and deleting local playlists are not available as Assist tools. API keys and raw backend errors are not sent to the LLM.
 
 Settings names vary by Home Assistant version and conversation agent. The built-in conversation agent does not call this LLM tool. Windows mock tests cover provider setup and reload, API tool discovery, permissions, and error handling; actual Home Assistant listing and playback require separate verification.
 
-If the provider is missing, check that version `1.1.0` is installed, the integration loaded after restarting Home Assistant, and reopen the conversation agent settings. This version includes a standalone YouTube provider, Cast device restrictions, Assist integration, and direct playback from YouTube URLs or video IDs.
+If the provider is missing, check that the integration is installed and loaded after restarting Home Assistant, then reopen the conversation agent settings.
 
 Official interface: [Home Assistant LLM API and tool contribution](https://developers.home-assistant.io/docs/core/llm/).
 
@@ -116,7 +133,7 @@ On Windows, install `aiohttp` and `voluptuous` in Python, then run:
 python -B -m unittest discover -s tests -v
 ```
 
-Tests mock Home Assistant interfaces and use temporary files to verify playlist restoration. Actual Home Assistant Store behavior, configuration loading, API authentication, and Cast playback require separate verification.
+Tests mock Home Assistant interfaces and use temporary files to verify playlist restoration. Actual Home Assistant Store behavior, configuration loading, API authentication, and TV playback require separate verification.
 
 The HACS validation GitHub Action runs on pushes, pull requests, daily, and on manual dispatch. It validates this repository as an integration.
 

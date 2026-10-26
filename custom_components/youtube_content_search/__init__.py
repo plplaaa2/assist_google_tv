@@ -1,11 +1,11 @@
-"""Set up service-only YouTube Content Search."""
+"""Set up the Assist Google TV service integration."""
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 
-from .const import CONF_API_KEY, DOMAIN
+from .const import CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN
 from .playlist_store import DATA_PLAYLIST_STORE, PlaylistStore
 from .services import async_setup_services
 
@@ -25,12 +25,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         await playlists.async_load()
         runtime[DATA_PLAYLIST_STORE] = playlists
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
+    hass.data[DOMAIN][CONF_PLAYBACK_MODE] = _entry_playback_mode(config_entry)
     # Register a selectable LLM tool provider on every supported HA; related: llm.py.
     from .llm import async_register_api
 
     async_register_api(hass, config_entry)
     config_entry.async_on_unload(config_entry.add_update_listener(_async_update_options))
-    _LOGGER.info("YouTube Content Search services configured")
+    _LOGGER.info("Assist Google TV services configured")
     return True
 
 
@@ -46,6 +47,16 @@ async def async_setup_entry_credentials(hass: HomeAssistant, config_entry: Confi
     if not isinstance(api_key, str) or not api_key.strip():
         raise ConfigEntryError("YouTube API key is required")
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
+    hass.data[DOMAIN][CONF_PLAYBACK_MODE] = _entry_playback_mode(config_entry)
+
+
+# Legacy entries without a playback option retain the original Cast behavior.
+def _entry_playback_mode(config_entry: ConfigEntry) -> str:
+    """Resolve the configured mode while keeping pre-mode entries compatible."""
+    return config_entry.options.get(
+        CONF_PLAYBACK_MODE,
+        config_entry.data.get(CONF_PLAYBACK_MODE, "cast"),
+    )
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

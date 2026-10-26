@@ -1,9 +1,13 @@
-"""YouTube Content Search - 서비스 및 HTTP 처리 모듈."""
+"""Assist Google TV service and HTTP handlers."""
 
 import asyncio
 import json as _json_module
+import html as _html_module
+from html.parser import HTMLParser
 import aiohttp
 import aiohttp.web
+import httpx
+from curl_cffi.requests import AsyncSession as CurlAsyncSession
 import logging
 import urllib.parse
 import re
@@ -14,7 +18,11 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall
-from .const import DOMAIN, CONF_API_KEY
+from .const import (
+    CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN,
+    PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST, PLAYBACK_MODE_SMARTTUBE,
+    PLAYBACK_MODE_CAST_FALLBACK,
+)
 from .playlist_store import DATA_PLAYLIST_STORE
 
 _LOGGER = logging.getLogger(__name__)
@@ -265,7 +273,7 @@ async def async_handle_playlist_delete(hass: HomeAssistant, request: aiohttp.web
 def _require_api_key(hass: HomeAssistant) -> str:
     api_key = _get_api_key(hass)
     if not api_key:
-        raise ServiceValidationError("Configure YouTube Content Search before calling this action")
+        raise ServiceValidationError("Configure Assist Google TV before calling this action")
     return api_key
 
 
@@ -326,6 +334,255 @@ async def _async_youtube_request(hass: HomeAssistant, resource: str, params: dic
         raise HomeAssistantError("Unable to retrieve YouTube data") from None
 
 
+# Resolve Netflix title/episode IDs from public pages; related: netflix_play action.
+async def _async_netflix_request(
+    hass: HomeAssistant, url: str, *, headers: dict | None = None, data: dict | None = None,
+) -> str:
+    """Fetch a public Netflix/search page using Home Assistant's shared session."""
+    session = async_get_clientsession(hass)
+    try:
+        request = session.post if data is not None else session.get
+        async with request(url, headers=headers, data=data, timeout=aiohttp.ClientTimeout(total=12)) as response:
+            response.raise_for_status()
+            return await response.text()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        status = getattr(err, "status", None)
+        _LOGGER.warning(
+            "Netflix title lookup request failed (%s, HTTP %s)", type(err).__name__, status or "unknown",
+        )
+        raise HomeAssistantError("Netflix title lookup failed") from None
+
+
+async def _async_netflix_search_httpx(data: dict[str, str]) -> tuple[int, str]:
+    """Issue a bounded DDG HTML request; related: assist_web_search.api.DDGClient._httpx."""
+    async with httpx.AsyncClient(timeout=12, trust_env=False) as client:
+        async with client.stream(
+            "POST", "https://html.duckduckgo.com/html", data=data,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"},
+        ) as response:
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > 2 * 1024 * 1024:
+                    raise HomeAssistantError("DuckDuckGo search response exceeded the size limit")
+            return response.status_code, body.decode("utf-8", errors="replace")
+
+
+async def _async_netflix_search_curl(data: dict[str, str]) -> tuple[int, str]:
+    """Retry a challenged DDG search with a browser TLS fingerprint; related: assist_web_search.api.DDGClient._curl."""
+    body = bytearray()
+
+    def collect(chunk: bytes) -> int:
+        if len(body) + len(chunk) > 2 * 1024 * 1024:
+            return 0
+        body.extend(chunk)
+        return len(chunk)
+
+    try:
+        async with CurlAsyncSession(impersonate="chrome131", trust_env=False) as session:
+            response = await session.post(
+                "https://html.duckduckgo.com/html", data=data,
+                timeout=12,
+                allow_redirects=False, content_callback=collect,
+            )
+        return response.status_code, body.decode("utf-8", errors="replace")
+    except HomeAssistantError:
+        raise
+    except Exception as err:
+        _LOGGER.warning("Netflix title lookup curl retry failed (%s)", type(err).__name__)
+        raise HomeAssistantError("Netflix title lookup failed") from None
+
+
+class _NetflixSearchResultsParser(HTMLParser):
+    """Extract DDG result-title links; related: assist_web_search.api.parse_results."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.result_depth = 0
+        self.result_div_stack: list[bool] = []
+        self.anchor_depth = 0
+        self.anchor_href = ""
+        self.anchor_text: list[str] = []
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = set((attributes.get("class") or "").split())
+        if tag == "div":
+            is_result = "result" in classes
+            self.result_div_stack.append(is_result)
+            self.result_depth += int(is_result)
+        if tag == "a" and self.result_depth and classes.intersection({"result__a", "result__title"}):
+            self.anchor_depth = 1
+            self.anchor_href = attributes.get("href") or ""
+            self.anchor_text = []
+        elif self.anchor_depth and tag == "a":
+            self.anchor_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self.anchor_depth:
+            self.anchor_depth -= 1
+            if self.anchor_depth == 0 and self.anchor_href:
+                self.links.append(self.anchor_href)
+        if tag == "div" and self.result_div_stack:
+            self.result_depth -= int(self.result_div_stack.pop())
+
+
+async def _async_netflix_title_id(hass: HomeAssistant, query: str) -> str:
+    """Resolve Netflix title IDs with standalone DDG request and parsing code."""
+    search_query = f"site:netflix.com/title {query}"
+    search_data = {"q": search_query, "b": "", "kl": "", "kp": "-1"}
+    try:
+        status, html = await _async_netflix_search_httpx(search_data)
+    except Exception as err:
+        _LOGGER.warning("Netflix title lookup HTTP request failed (%s); trying curl backend", type(err).__name__)
+        status, html = 0, ""
+
+    def blocked(response_status: int, response_html: str) -> bool:
+        sample = response_html[:10000].lower()
+        return response_status in (202, 403) or not response_html.strip() or any(
+            marker in sample for marker in ("anomaly.js", "anomaly-modal", "captcha", "challenge-form")
+        )
+
+    if status == 429:
+        raise HomeAssistantError("DuckDuckGo search rate limit reached")
+    if blocked(status, html):
+        _LOGGER.warning("Netflix title lookup provider DuckDuckGo returned a challenge page")
+        try:
+            status, html = await _async_netflix_search_curl(search_data)
+        except Exception as err:
+            _LOGGER.warning("Netflix title lookup curl retry failed (%s)", type(err).__name__)
+            raise HomeAssistantError("Netflix title lookup request failed") from None
+        if status == 429:
+            raise HomeAssistantError("DuckDuckGo search rate limit reached")
+        if blocked(status, html):
+            _LOGGER.warning("Netflix title lookup curl retry returned blocked HTTP %s", status)
+            raise HomeAssistantError("Netflix title lookup was blocked by DuckDuckGo")
+    if status != 200:
+        _LOGGER.warning("Netflix title lookup returned HTTP %s", status)
+        raise HomeAssistantError("Netflix title lookup request failed")
+
+    parser = _NetflixSearchResultsParser()
+    parser.feed(html)
+    candidates = []
+    for link in parser.links:
+        resolved = urllib.parse.urljoin("https://html.duckduckgo.com/html", _html_module.unescape(link))
+        parsed = urllib.parse.urlsplit(resolved)
+        if parsed.hostname in {"duckduckgo.com", "www.duckduckgo.com"} and parsed.path == "/l/":
+            resolved = urllib.parse.parse_qs(parsed.query).get("uddg", [""])[0]
+        if resolved:
+            candidates.append(resolved)
+    pattern = re.compile(
+        r"netflix\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(?:title|watch)/(\d+)", re.IGNORECASE,
+    )
+    for candidate in candidates:
+        normalized = candidate
+        for _ in range(2):
+            normalized = urllib.parse.unquote(normalized)
+        match = pattern.search(normalized.replace(r"\/", "/"))
+        if match:
+            return match.group(1)
+    if not parser.links and not re.search(r"no-results(?:__message)?", html, re.IGNORECASE):
+        _LOGGER.warning("Netflix title lookup returned no recognizable DuckDuckGo result markup")
+    _LOGGER.warning("Netflix title lookup returned %d result links without a Netflix title ID", len(candidates))
+    raise HomeAssistantError("Netflix title search returned no usable results")
+
+
+def _netflix_episode_clusters(html: str, title_id: str) -> list[list[int]]:
+    """Group sequential Netflix episode video IDs into seasons, following stv's resolver."""
+    episode_ids: set[int] = set()
+    season_ids: set[int] = set()
+    for kind, raw_id in re.findall(
+        r'"__typename"\s*:\s*"(Episode|Season|Show)"\s*,\s*"videoId"\s*:\s*(\d+)',
+        html,
+    ):
+        if kind == "Episode":
+            episode_ids.add(int(raw_id))
+        elif kind == "Season":
+            season_ids.add(int(raw_id))
+    if episode_ids:
+        ids = sorted(episode_ids)
+    else:
+        raw_ids = {int(value) for value in re.findall(r'"videoId"\s*:\s*(\d+)', html)}
+        ids = sorted(raw_ids - season_ids - {int(title_id)})
+
+    clusters: list[list[int]] = []
+    current: list[int] = []
+    for video_id in ids:
+        if current and video_id != current[-1] + 1:
+            if len(current) >= 3:
+                clusters.append(current)
+            current = []
+        current.append(video_id)
+    if len(current) >= 3:
+        clusters.append(current)
+    return clusters
+
+
+async def _async_netflix_episode_id(hass: HomeAssistant, title_id: str, season: int, episode: int) -> str:
+    """Resolve a season/episode to its Netflix video ID from the title page."""
+    html = await _async_netflix_request(
+        hass,
+        f"https://www.netflix.com/title/{title_id}",
+        headers={"Accept-Language": "en-US,en;q=0.9", "User-Agent": "Mozilla/5.0"},
+    )
+    seasons = _netflix_episode_clusters(html, title_id)
+    if season > len(seasons) or episode > len(seasons[season - 1]):
+        raise HomeAssistantError(f"Could not find Netflix S{season}E{episode} for title ID {title_id}")
+    return str(seasons[season - 1][episode - 1])
+
+
+async def _async_netflix_is_movie(hass: HomeAssistant, title_id: str) -> bool:
+    """Read Netflix's title metadata to distinguish movies from series before opening a title."""
+    try:
+        html = await _async_netflix_request(
+            hass,
+            f"https://www.netflix.com/title/{title_id}",
+            headers={"Accept-Language": "en-US,en;q=0.9", "User-Agent": "Mozilla/5.0"},
+        )
+    except HomeAssistantError:
+        _LOGGER.warning("Netflix title type lookup failed; opening the title page")
+        return False
+    match = re.search(
+        rf'"topLevelVideoId"\s*:\s*{re.escape(title_id)}\s*,\s*"type"\s*:\s*"([^"]+)"',
+        html,
+    )
+    return bool(match and match.group(1).casefold() == "movie")
+
+
+# Netflix title lookup and app-link launch; related: services.yaml and README.ko.md.
+async def async_netflix_play(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Find a Netflix title and play movies or open the selected series page/episode."""
+    query = (call.data.get("query") or "").strip()
+    season = call.data.get("season")
+    episode = call.data.get("episode")
+    entity_id = call.data["entity_id"]
+    if not query:
+        raise ServiceValidationError("Provide a Netflix title name")
+    if (season is None) != (episode is None):
+        raise ServiceValidationError("Provide both season and episode, or neither")
+    if season is not None and (season < 1 or episode < 1):
+        raise ServiceValidationError("Season and episode must be positive numbers")
+    if not is_app_link_player(hass, entity_id):
+        raise ServiceValidationError("Choose a remote provided by Android TV Remote")
+
+    title_id = await _async_netflix_title_id(hass, query)
+    if season is not None:
+        content_id = await _async_netflix_episode_id(hass, title_id, season, episode)
+        activity = f"https://www.netflix.com/watch/{content_id}?source=30"
+    elif await _async_netflix_is_movie(hass, title_id):
+        activity = f"https://www.netflix.com/watch/{title_id}?source=30"
+    else:
+        activity = f"https://www.netflix.com/title/{title_id}?source=30"
+    try:
+        await hass.services.async_call(
+            "remote", "turn_on", {"entity_id": entity_id, "activity": activity}, blocking=True,
+        )
+    except HomeAssistantError:
+        _LOGGER.error("Netflix app-link launch failed for %s", entity_id)
+        raise HomeAssistantError("Unable to open Netflix title on the selected TV") from None
+
+
 # Share Cast identity checks with Assist; related: llm.py and services.yaml.
 def is_cast_player(hass: HomeAssistant, entity_id: str) -> bool:
     """Allow only media players registered by the Google Cast integration."""
@@ -333,6 +590,23 @@ def is_cast_player(hass: HomeAssistant, entity_id: str) -> bool:
         return False
     entry = er.async_get(hass).async_get(entity_id)
     return entry is not None and entry.platform == "cast"
+
+
+# Validate Android TV Remote targets independently; related: llm.py/config_flow.py.
+def is_app_link_player(hass: HomeAssistant, entity_id: str) -> bool:
+    """Allow only remote entities registered by Android TV Remote."""
+    if not entity_id.startswith("remote."):
+        return False
+    entry = er.async_get(hass).async_get(entity_id)
+    return entry is not None and entry.platform == "androidtv_remote"
+
+
+def playback_mode(hass: HomeAssistant) -> str:
+    """Return the configured mode, preserving Cast for older entries."""
+    config = hass.data.get(DOMAIN, {})
+    if isinstance(config, dict):
+        return config.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE)
+    return DEFAULT_PLAYBACK_MODE
 
 
 def _video_id_from_input(value: str) -> str:
@@ -364,15 +638,19 @@ def _video_id_from_input(value: str) -> str:
     return candidate
 
 
-# Validate Cast targets before API requests; related: llm.py/services.yaml.
+# Validate selected playback targets before API requests; related: llm.py/services.yaml.
 async def async_search_play(hass: HomeAssistant, call: ServiceCall):
-    """Search for or directly select one video, then play it using Google Cast."""
+    """Search for or directly select one video and dispatch via configured playback mode."""
     query = (call.data.get("query") or "").strip()
     video = (call.data.get("video") or "").strip()
     if bool(query) == bool(video):
         raise ServiceValidationError("Provide exactly one of a search query or video URL/ID")
-    if not is_cast_player(hass, call.data["entity_id"]):
-        raise ServiceValidationError("Choose a media player provided by Google Cast")
+    mode = playback_mode(hass)
+    app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
+    valid_target = is_app_link_player(hass, call.data["entity_id"]) if app_link_mode else is_cast_player(hass, call.data["entity_id"])
+    if not valid_target:
+        message = "Choose a remote provided by Android TV Remote" if app_link_mode else "Choose a media player provided by Google Cast"
+        raise ServiceValidationError(message)
     if video:
         video_id = _video_id_from_input(video)
     else:
@@ -383,9 +661,38 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         if not items or not items[0].get("id", {}).get("videoId"):
             raise HomeAssistantError("No YouTube video found")
         video_id = items[0]["id"]["videoId"]
+    if app_link_mode:
+        activity = f"https://www.youtube.com/watch?v={video_id}"
+        if mode in (PLAYBACK_MODE_SMARTTUBE, PLAYBACK_MODE_CAST_FALLBACK):
+            activity = f"vnd.youtube.launch://www.youtube.com/watch?v={video_id}"
+        try:
+            await hass.services.async_call(
+                "remote", "turn_on", {
+                    "entity_id": call.data["entity_id"],
+                    "activity": activity,
+                }, blocking=True,
+            )
+            return
+        except HomeAssistantError:
+            if mode not in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,)):
+                raise
+            cast_entity = call.data.get("cast_entity_id")
+            if not cast_entity or not is_cast_player(hass, cast_entity):
+                raise ServiceValidationError(
+                    "App-link playback failed; configure a valid Cast fallback entity"
+                ) from None
+            _LOGGER.warning("Android TV app-link playback failed; trying Google Cast fallback")
+            await _async_cast_play(hass, cast_entity, video_id)
+            return
+    await _async_cast_play(hass, call.data["entity_id"], video_id)
+
+
+# Keep Cast dispatch shared by the direct and fallback playback paths; related: async_search_play.
+async def _async_cast_play(hass: HomeAssistant, entity_id: str, video_id: str) -> None:
+    """Send a YouTube Cast request for one validated video ID."""
     await hass.services.async_call(
         "media_player", "play_media", {
-            "entity_id": call.data["entity_id"],
+            "entity_id": entity_id,
             "media_content_type": "cast",
             "media_content_id": _json_module.dumps({
                 "app_name": "youtube", "media_id": video_id,
@@ -459,6 +766,9 @@ async def async_setup_services(hass: HomeAssistant):
     async def _search_play(call: ServiceCall):
         await async_search_play(hass, call)
 
+    async def _netflix_play(call: ServiceCall):
+        await async_netflix_play(hass, call)
+
     async def _playlist_save_service(call: ServiceCall):
         await async_playlist_save_service(hass, call)
 
@@ -469,7 +779,14 @@ async def async_setup_services(hass: HomeAssistant):
         "search_play": (_search_play, vol.Schema({
             vol.Optional("query"): cv.string,
             vol.Optional("video"): cv.string,
-            vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^media_player\.")),
+        vol.Required("entity_id"): cv.entity_id,
+            vol.Optional("cast_entity_id"): vol.All(cv.entity_id, vol.Match(r"^media_player\.")),
+        })),
+        "netflix_play": (_netflix_play, vol.Schema({
+            vol.Required("query"): cv.string,
+            vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^remote\.")),
+            vol.Optional("season"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("episode"): vol.All(vol.Coerce(int), vol.Range(min=1)),
         })),
         "playlist_save": (_playlist_save_service, vol.Schema({
             vol.Required("playlist_id"): cv.string,
@@ -486,7 +803,8 @@ async def async_unload_services(hass: HomeAssistant):
     """Unregister legacy service functions."""
     try:
         hass.services.async_remove(DOMAIN, "search_play")
+        hass.services.async_remove(DOMAIN, "netflix_play")
         hass.services.async_remove(DOMAIN, "playlist_save")
         hass.services.async_remove(DOMAIN, "playlist_delete")
     except Exception as err:
-        _LOGGER.error("YouTube Content Search services unload failed: %s", err, exc_info=True)
+        _LOGGER.error("Assist Google TV services unload failed: %s", err, exc_info=True)

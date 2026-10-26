@@ -1,4 +1,4 @@
-// YouTube Content Search Web Component
+// Assist Google TV Web Component
 class YouTubeContentSearchPanel extends HTMLElement {
     static get observedAttributes() {
         return ['external-network', 'config-attributes'];

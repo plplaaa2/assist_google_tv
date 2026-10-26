@@ -1,6 +1,6 @@
 {
   "domain": "youtube_content_search",
-  "name": "YouTube Content Search",
+  "name": "Assist Google TV",
   "codeowners": [
     "@plplaaa2"
   ],
@@ -8,11 +8,14 @@
   "dependencies": [
     "media_player"
   ],
-  "documentation": "https://github.com/plplaaa2/youtube_content_search#readme",
+  "documentation": "https://github.com/plplaaa2/assist_google_tv#readme",
   "iot_class": "cloud_polling",
   "integration_type": "service",
-  "issue_tracker": "https://github.com/plplaaa2/youtube_content_search/issues",
-  "requirements": [],
+  "issue_tracker": "https://github.com/plplaaa2/assist_google_tv/issues",
+  "requirements": [
+    "httpx==0.28.1",
+    "curl_cffi==0.16.3"
+  ],
   "single_config_entry": true,
   "version": "1.1.0"
 }

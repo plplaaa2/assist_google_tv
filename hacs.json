@@ -1,8 +1,7 @@
 {
-  "name": "YouTube Content Search",
+  "name": "Assist Google TV",
   "content_in_root": false,
   "render_readme": true,
   "zip_release": false,
-  "hide_default_branch": false,
-  "homeassistant": "2024.6.0"
+  "hide_default_branch": false
 }

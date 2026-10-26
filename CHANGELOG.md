@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to YouTube Content Search are documented here.
+Notable changes to Assist Google TV are documented here.
 
 ## [1.1.0] - 2026-10-18
 

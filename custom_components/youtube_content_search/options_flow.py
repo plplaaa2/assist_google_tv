@@ -1,4 +1,4 @@
-"""YouTube Content Search Options Flow - Secure API key management."""
+"""Assist Google TV options flow - YouTube API key management."""
 
 import logging
 from typing import Any, Dict, Optional
@@ -12,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class YouTubeContentSearchOptionsFlow:
-    """Handle options flow for YouTube Content Search integration."""
+    """Handle options flow for the Assist Google TV integration."""
 
     VERSION = 1
     
@@ -27,7 +27,7 @@ class YouTubeContentSearchOptionsFlow:
     async def async_show_form(self) -> Dict[str, Any]:
         """Create and show the options form for API key input."""
         return {
-            "title": "YouTube Content Search Settings",
+            "title": "Assist Google TV Settings",
             "form_step_id": "api_key",
             "data_schema": None,  # Custom schema in callback
             "description_placeholders": {},
@@ -45,7 +45,7 @@ class YouTubeContentSearchOptionsFlow:
         if not api_key_value.strip():
             _LOGGER.error("YouTube API Key cannot be empty")
             return {
-                "title": "YouTube Content Search",
+                "title": "Assist Google TV",
                 "form_step_id": "api_key",
                 "errors": {"base": "api_key_required"},
                 "data_schema": None,
@@ -64,7 +64,7 @@ class YouTubeContentSearchOptionsFlow:
         except Exception as err:
             _LOGGER.error("Error saving YouTube API Key: %s", err, exc_info=True)
             return {
-                "title": "YouTube Content Search",
+                "title": "Assist Google TV",
                 "form_step_id": "api_key",
                 "errors": {"base": "save_error"},
                 "data_schema": None,
@@ -72,6 +72,6 @@ class YouTubeContentSearchOptionsFlow:
             }
 
         return self.async_create_entry(
-            title="YouTube Content Search",
+            title="Assist Google TV",
             data={CONF_API_KEY: api_key_value}
         )

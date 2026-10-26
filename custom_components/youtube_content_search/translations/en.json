@@ -2,9 +2,10 @@
   "config": {
     "step": {
       "user": {
-        "title": "YouTube Content Search",
+        "title": "Assist Google TV",
         "data": {
-          "api_key": "YouTube API key"
+          "api_key": "YouTube API key",
+          "playback_mode": "Playback mode (YouTube app or SmartTube, Cast on failure)"
         }
       }
     },
@@ -18,9 +19,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "YouTube Content Search",
+        "title": "Assist Google TV",
         "data": {
-          "api_key": "YouTube API key"
+          "api_key": "YouTube API key",
+          "playback_mode": "Playback mode (YouTube app or SmartTube, Cast on failure)"
         }
       }
     },
