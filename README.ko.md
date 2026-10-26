@@ -92,6 +92,25 @@ data:
   id: "my_music"
 ```
 
+저장된 재생목록 요약을 조회하고, `playlist_id`를 지정해 영상 제목·채널·순번을 확인할 수 있습니다. 자동화에서는 응답을 변수로 받습니다.
+
+```yaml
+action: assist_google_tv.youtube_playlist_list
+data:
+  playlist_id: "my_music"
+response_variable: playlist
+```
+
+재생목록 전체를 저장된 순서대로 재생하려면 다음 액션을 사용합니다. 앱 링크 방식에서는 첫 영상은 Android TV Remote로 열고, 이후 영상은 같은 TV의 Cast 엔티티 대기열에 추가합니다. Cast 전용 방식에서는 `entity_id`에 Cast 플레이어를 지정합니다.
+
+```yaml
+action: assist_google_tv.youtube_playlist_play
+data:
+  playlist_id: "my_music"
+  entity_id: remote.living_room_tv
+  cast_entity_id: media_player.living_room_tv
+```
+
 ## Assist 음성 명령
 
 1. 사용할 Android TV Remote 및/또는 Google Cast 엔티티를 Assist에 노출합니다.

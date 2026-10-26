@@ -17,7 +17,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from .const import (
     CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN, LEGACY_DOMAIN,
     PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST, PLAYBACK_MODE_SMARTTUBE,
@@ -647,10 +647,10 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         raise ServiceValidationError("Provide exactly one of a search query or video URL/ID")
     mode = playback_mode(hass)
     app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
-    valid_target = is_app_link_player(hass, call.data["entity_id"]) if app_link_mode else is_cast_player(hass, call.data["entity_id"])
-    if not valid_target:
-        message = "Choose a remote provided by Android TV Remote" if app_link_mode else "Choose a media player provided by Google Cast"
-        raise ServiceValidationError(message)
+    if app_link_mode and not is_app_link_player(hass, call.data["entity_id"]):
+        raise ServiceValidationError("Choose a remote provided by Android TV Remote")
+    if not app_link_mode and not is_cast_player(hass, call.data["entity_id"]):
+        raise ServiceValidationError("Choose a media player provided by Google Cast")
     if video:
         video_id = _video_id_from_input(video)
     else:
@@ -661,6 +661,20 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         if not items or not items[0].get("id", {}).get("videoId"):
             raise HomeAssistantError("No YouTube video found")
         video_id = items[0]["id"]["videoId"]
+    await _async_play_video(
+        hass, video_id, call.data["entity_id"], call.data.get("cast_entity_id"),
+    )
+
+
+# Share single-video dispatch between search and local playlist playback; related: services.yaml.
+async def _async_play_video(hass: HomeAssistant, video_id: str, entity_id: str, cast_entity_id: Optional[str] = None):
+    """Dispatch one known YouTube video using the configured app/Cast mode."""
+    mode = playback_mode(hass)
+    app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
+    valid_target = is_app_link_player(hass, entity_id) if app_link_mode else is_cast_player(hass, entity_id)
+    if not valid_target:
+        message = "Choose a remote provided by Android TV Remote" if app_link_mode else "Choose a media player provided by Google Cast"
+        raise ServiceValidationError(message)
     if app_link_mode:
         activity = f"https://www.youtube.com/watch?v={video_id}"
         if mode in (PLAYBACK_MODE_SMARTTUBE, PLAYBACK_MODE_CAST_FALLBACK):
@@ -668,7 +682,7 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         try:
             await hass.services.async_call(
                 "remote", "turn_on", {
-                    "entity_id": call.data["entity_id"],
+                    "entity_id": entity_id,
                     "activity": activity,
                 }, blocking=True,
             )
@@ -676,27 +690,27 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         except HomeAssistantError:
             if mode not in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,)):
                 raise
-            cast_entity = call.data.get("cast_entity_id")
-            if not cast_entity or not is_cast_player(hass, cast_entity):
+            if not cast_entity_id or not is_cast_player(hass, cast_entity_id):
                 raise ServiceValidationError(
                     "App-link playback failed; configure a valid Cast fallback entity"
                 ) from None
             _LOGGER.warning("Android TV app-link playback failed; trying Google Cast fallback")
-            await _async_cast_play(hass, cast_entity, video_id)
+            await _async_cast_play(hass, cast_entity_id, video_id)
             return
-    await _async_cast_play(hass, call.data["entity_id"], video_id)
+    await _async_cast_play(hass, entity_id, video_id)
 
 
 # Keep Cast dispatch shared by the direct and fallback playback paths; related: async_search_play.
-async def _async_cast_play(hass: HomeAssistant, entity_id: str, video_id: str) -> None:
-    """Send a YouTube Cast request for one validated video ID."""
+async def _async_cast_play(hass: HomeAssistant, entity_id: str, video_id: str, *, enqueue: bool = False) -> None:
+    """Send or enqueue a YouTube Cast request for one validated video ID."""
+    media_content_id = {"app_name": "youtube", "media_id": video_id}
+    if enqueue:
+        media_content_id["enqueue"] = True
     await hass.services.async_call(
         "media_player", "play_media", {
             "entity_id": entity_id,
             "media_content_type": "cast",
-            "media_content_id": _json_module.dumps({
-                "app_name": "youtube", "media_id": video_id,
-            }),
+            "media_content_id": _json_module.dumps(media_content_id),
         }, blocking=True,
     )
 
@@ -761,6 +775,65 @@ async def async_playlist_delete_service(hass: HomeAssistant, call: ServiceCall):
     await playlists.async_delete(playlist_id)
 
 
+async def async_playlist_list_service(hass: HomeAssistant, call: ServiceCall):
+    """Return playlist summaries or one playlist's videos; related: playlist_store.py."""
+    playlists = hass.data.get(DOMAIN, {}).get(DATA_PLAYLIST_STORE)
+    if playlists is None:
+        raise ServiceValidationError("Playlist storage is not configured")
+    snapshot = await playlists.async_snapshot()
+    playlist_id = call.data.get("playlist_id")
+    if playlist_id is None:
+        return {"playlists": [
+            {"playlist_id": name, "video_count": len(videos)}
+            for name, videos in snapshot.items()
+        ]}
+    playlist_id = _sanitize_entity_id(playlist_id)
+    if not playlist_id:
+        raise ServiceValidationError("Playlist ID cannot be empty")
+    videos = snapshot.get(playlist_id)
+    if videos is None:
+        raise ServiceValidationError("Playlist not found")
+    return {
+        "playlist_id": playlist_id,
+        "video_count": len(videos),
+        "videos": [
+            {
+                "position": index,
+                "video_id": video["videoId"],
+                "title": video.get("title", ""),
+                "channel": video.get("channel", ""),
+                "thumbnail": video.get("thumbnail", ""),
+            }
+            for index, video in enumerate(videos, 1)
+        ],
+    }
+
+
+async def async_playlist_play_service(hass: HomeAssistant, call: ServiceCall):
+    """Play all stored videos in order using the YouTube queue; related: playlist_store.py."""
+    playlist_id = _sanitize_entity_id(call.data["playlist_id"])
+    if not playlist_id:
+        raise ServiceValidationError("Playlist ID cannot be empty")
+    playlists = hass.data.get(DOMAIN, {}).get(DATA_PLAYLIST_STORE)
+    if playlists is None:
+        raise ServiceValidationError("Playlist storage is not configured")
+    videos = (await playlists.async_snapshot()).get(playlist_id)
+    if not videos:
+        raise ServiceValidationError("Playlist not found or empty")
+    mode = playback_mode(hass)
+    entity_id = call.data["entity_id"]
+    cast_entity_id = call.data.get("cast_entity_id")
+    app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
+    if app_link_mode and len(videos) > 1 and not cast_entity_id:
+        raise ServiceValidationError("Choose a Google Cast entity to queue the remaining videos")
+    if cast_entity_id and not is_cast_player(hass, cast_entity_id):
+        raise ServiceValidationError("Choose a Google Cast player")
+    await _async_play_video(hass, videos[0]["videoId"], entity_id, cast_entity_id)
+    queue_entity = cast_entity_id if app_link_mode else entity_id
+    for video in videos[1:]:
+        await _async_cast_play(hass, queue_entity, video["videoId"], enqueue=True)
+
+
 async def async_setup_services(hass: HomeAssistant):
     """Register validated actions once; related: services.yaml/config_flow.py."""
     async def _search_play(call: ServiceCall):
@@ -774,6 +847,12 @@ async def async_setup_services(hass: HomeAssistant):
 
     async def _playlist_delete_service(call: ServiceCall):
         await async_playlist_delete_service(hass, call)
+
+    async def _playlist_list_service(call: ServiceCall):
+        return await async_playlist_list_service(hass, call)
+
+    async def _playlist_play_service(call: ServiceCall):
+        await async_playlist_play_service(hass, call)
 
     actions = {
         "youtube_search_play": (_search_play, vol.Schema({
@@ -793,10 +872,21 @@ async def async_setup_services(hass: HomeAssistant):
             vol.Required("video_ids"): _normalize_video_ids,
         })),
         "youtube_playlist_delete": (_playlist_delete_service, vol.Schema({vol.Required("id"): cv.string})),
+        "youtube_playlist_list": (_playlist_list_service, vol.Schema({
+            vol.Optional("playlist_id"): cv.string,
+        })),
+        "youtube_playlist_play": (_playlist_play_service, vol.Schema({
+            vol.Required("playlist_id"): cv.string,
+            vol.Required("entity_id"): cv.entity_id,
+            vol.Optional("cast_entity_id"): vol.All(cv.entity_id, vol.Match(r"^media_player\.")),
+        })),
     }
     for name, (handler, schema) in actions.items():
         if not hass.services.has_service(DOMAIN, name):
-            hass.services.async_register(DOMAIN, name, handler, schema=schema)
+            hass.services.async_register(
+                DOMAIN, name, handler, schema=schema,
+                **({"supports_response": SupportsResponse.ONLY} if name == "youtube_playlist_list" else {}),
+            )
 
 
 async def async_unload_services(hass: HomeAssistant):
@@ -806,5 +896,7 @@ async def async_unload_services(hass: HomeAssistant):
         hass.services.async_remove(DOMAIN, "netflix_play")
         hass.services.async_remove(DOMAIN, "youtube_playlist_save")
         hass.services.async_remove(DOMAIN, "youtube_playlist_delete")
+        hass.services.async_remove(DOMAIN, "youtube_playlist_list")
+        hass.services.async_remove(DOMAIN, "youtube_playlist_play")
     except Exception as err:
         _LOGGER.error("Assist Google TV services unload failed: %s", err, exc_info=True)

@@ -82,6 +82,13 @@ class PlaylistStore:
         except (OSError, HomeAssistantError):
             raise HomeAssistantError("Unable to save or verify playlist storage") from None
 
+    async def async_snapshot(self):
+        """Return a consistent read-only snapshot; related: playlist list/play actions."""
+        async with self.lock:
+            if self.closed:
+                raise HomeAssistantError("Playlist storage is unavailable; try again after setup")
+            return deepcopy(self.playlists)
+
     def _publish(self, name, videos):
         self.hass.states.async_set(
             f"{_ENTITY_PREFIX}{name}", "on", {"data": json.dumps(videos)},

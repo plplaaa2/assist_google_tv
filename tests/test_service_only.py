@@ -1,6 +1,7 @@
 """Contract tests with HA doubles; related: config_flow.py, __init__.py, services.py."""
 import asyncio
 from dataclasses import dataclass
+from enum import Enum
 import importlib
 import json
 from pathlib import Path
@@ -21,6 +22,11 @@ sys.path.insert(0, str(ROOT))
 
 class HAError(Exception):
     pass
+
+
+class SupportsResponse(Enum):
+    OPTIONAL = "optional"
+    ONLY = "only"
 
 
 class Flow:
@@ -82,7 +88,7 @@ class LLMApi:
 
 modules = {
     "homeassistant": {},
-    "homeassistant.core": {"HomeAssistant": object, "ServiceCall": object, "callback": lambda f: f},
+    "homeassistant.core": {"HomeAssistant": object, "ServiceCall": object, "SupportsResponse": SupportsResponse, "callback": lambda f: f},
     "homeassistant.config_entries": {"ConfigEntry": object, "ConfigFlow": Flow, "OptionsFlow": Flow},
     "homeassistant.exceptions": {"HomeAssistantError": HAError, "ServiceValidationError": HAError, "ConfigEntryError": HAError},
     "homeassistant.helpers": {},
@@ -123,12 +129,12 @@ class Registry:
     def has_service(self, domain, name):
         return domain == "assist_google_tv" and name in self.actions
 
-    def async_register(self, domain, name, handler, schema):
-        self.actions[name] = (handler, schema)
+    def async_register(self, domain, name, handler, schema, **kwargs):
+        self.actions[name] = (handler, schema, kwargs.get("supports_response"))
 
     async def invoke(self, name, data):
-        handler, schema = self.actions[name]
-        await handler(SimpleNamespace(data=schema(data)))
+        handler, schema, _supports_response = self.actions[name]
+        return await handler(SimpleNamespace(data=schema(data)))
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -317,12 +323,12 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_setup_and_options_without_frontend(self):
-        self.assertEqual(len(self.hass.services.actions), 4)
+        self.assertEqual(len(self.hass.services.actions), 6)
         self.entry.options = {"api_key": uuid.uuid4().hex}
         await integration._async_update_options(self.hass, self.entry)
         self.assertEqual(self.hass.data[services.DOMAIN]["api_key"], self.entry.options["api_key"])
         await integration.async_setup(self.hass, {})
-        self.assertEqual(len(self.hass.services.actions), 4)
+        self.assertEqual(len(self.hass.services.actions), 6)
 
     async def test_netflix_play_resolves_episode_and_sends_app_link(self):
         with patch.object(services, "_async_netflix_title_id", AsyncMock(return_value="81726714")), \
@@ -565,6 +571,55 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(json.loads(state.attributes["data"])), 2)
         await self.hass.services.invoke("youtube_playlist_delete", {"id": "my-list"})
         self.assertFalse(self.states)
+
+    async def test_playlist_list_returns_summaries_and_video_details(self):
+        playlists = self.hass.data[services.DOMAIN][playlist_store.DATA_PLAYLIST_STORE]
+        await playlists.async_merge("music", [{
+            "videoId": "dQw4w9WgXcQ", "title": "Never Gonna Give You Up",
+            "channel": "Rick Astley", "thumbnail": "https://example.com/thumb.jpg",
+        }])
+        response_handler, _schema, supports_response = self.hass.services.actions["youtube_playlist_list"]
+        self.assertEqual(supports_response, SupportsResponse.ONLY)
+        summaries = await self.hass.services.invoke("youtube_playlist_list", {})
+        self.assertEqual(summaries, {"playlists": [{"playlist_id": "music", "video_count": 1}]})
+        details = await self.hass.services.invoke("youtube_playlist_list", {"playlist_id": "music"})
+        self.assertEqual(details["videos"][0]["position"], 1)
+        self.assertEqual(details["videos"][0]["video_id"], "dQw4w9WgXcQ")
+        self.assertEqual(details["videos"][0]["channel"], "Rick Astley")
+
+    async def test_playlist_play_cast_queues_all_videos_in_order(self):
+        playlists = self.hass.data[services.DOMAIN][playlist_store.DATA_PLAYLIST_STORE]
+        await playlists.async_merge("music", [
+            {"videoId": "dQw4w9WgXcQ", "title": "First"},
+            {"videoId": "jNQXAC9IVRw", "title": "Second"},
+        ])
+        await self.hass.services.invoke("youtube_playlist_play", {
+            "playlist_id": "music", "entity_id": "media_player.tv",
+        })
+        calls = self.hass.services.async_call.call_args_list
+        self.assertEqual(len(calls), 2)
+        first = json.loads(calls[0].args[2]["media_content_id"])
+        second = json.loads(calls[1].args[2]["media_content_id"])
+        self.assertEqual(first, {"app_name": "youtube", "media_id": "dQw4w9WgXcQ"})
+        self.assertEqual(second, {"app_name": "youtube", "media_id": "jNQXAC9IVRw", "enqueue": True})
+
+    async def test_playlist_play_starts_remote_then_queues_remaining_cast_videos(self):
+        playlists = self.hass.data[services.DOMAIN][playlist_store.DATA_PLAYLIST_STORE]
+        await playlists.async_merge("music", [
+            {"videoId": "dQw4w9WgXcQ", "title": "First"},
+            {"videoId": "jNQXAC9IVRw", "title": "Second"},
+        ])
+        self.hass.data[services.DOMAIN]["playback_mode"] = "smarttube_fallback"
+        await self.hass.services.invoke("youtube_playlist_play", {
+            "playlist_id": "music", "entity_id": "remote.tv",
+            "cast_entity_id": "media_player.tv",
+        })
+        calls = self.hass.services.async_call.call_args_list
+        self.assertEqual(calls[0].args[:2], ("remote", "turn_on"))
+        self.assertEqual(calls[0].args[2]["activity"], "vnd.youtube.launch://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        queued = json.loads(calls[1].args[2]["media_content_id"])
+        self.assertEqual(queued["media_id"], "jNQXAC9IVRw")
+        self.assertTrue(queued["enqueue"])
 
     async def test_network_failure_does_not_expose_url(self):
         self.hass.session = SimpleNamespace(get=Mock(side_effect=aiohttp.ClientError("sensitive URL omitted")))

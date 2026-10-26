@@ -92,6 +92,27 @@ data:
   id: "my_music"
 ```
 
+List saved playlists and their video counts. Set `playlist_id` to return video titles, channels, and positions. Automations can capture the response in a variable:
+
+```yaml
+action: assist_google_tv.youtube_playlist_list
+data:
+  playlist_id: "my_music"
+response_variable: playlist
+```
+
+Play every saved video in order:
+
+```yaml
+action: assist_google_tv.youtube_playlist_play
+data:
+  playlist_id: "my_music"
+  entity_id: remote.living_room_tv
+  cast_entity_id: media_player.living_room_tv
+```
+
+In app-link modes, the first video opens through Android TV Remote and the remaining videos are added to the Cast queue for the same TV. In Cast-only mode, set `entity_id` to the Google Cast player.
+
 ## Use with Assist
 
 1. Expose the target Android TV Remote and/or Google Cast entities to Assist.
