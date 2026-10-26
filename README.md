@@ -22,7 +22,12 @@ Copy `custom_components/assist_google_tv` to `/config/custom_components/assist_g
 
 ## Configure
 
-Set up Google Cast and/or Android TV Remote in Home Assistant. In the integration setup, enter a YouTube Data API v3 key if you use YouTube search or playlist actions, then choose a playback mode:
+Set up Google Cast and/or Android TV Remote in Home Assistant, then follow the integration setup steps:
+
+1. Enter the YouTube Data API v3 key. The field is masked as a password.
+2. Choose Android TV Remote or ADB and select the TV entity.
+3. Check the detected apps to allow. If discovery misses an app, add it as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`. Remote candidates come from its configured app options; ADB candidates come from launcher discovery and `source_list`.
+4. Choose the YouTube playback mode.
 
 - **SmartTube → Cast fallback** (default)
 - **Official YouTube app → Cast fallback**
@@ -30,7 +35,7 @@ Set up Google Cast and/or Android TV Remote in Home Assistant. In the integratio
 
 App-link modes need an Android TV Remote `remote` entity and a Google Cast `media_player` for fallback. Cast-only mode uses a Google Cast `media_player`. Netflix actions use Android TV Remote and do not require a YouTube API key.
 
-The API key is stored in the Home Assistant config entry. Keep it out of automation YAML.
+When changing the key in integration options, leave the field blank to keep the saved value. Keep the key out of automation YAML.
 
 ## Actions
 
@@ -116,7 +121,7 @@ In app-link modes, the first video opens through Android TV Remote and the remai
 ## Use with Assist
 
 1. Expose the target Android TV Remote and/or Google Cast entities to Assist.
-2. In integration options, configure the app-launch control method (Remote or ADB), TV entity ID, and app JSON list. Each item uses `{"name":"YouTube","launch":"https://www.youtube.com"}`. Remote uses an activity/deep link; ADB uses the app package ID.
+2. In integration options, follow the ordered setup to choose Remote or ADB and the TV entity, then review the detected app checkboxes. Add only missing apps as JSON such as `{"name":"YouTube","launch":"https://www.youtube.com"}`. Remote uses an activity/deep link; ADB uses the app package ID.
 3. In a compatible conversation agent's **Tool providers** or **LLM API** settings, select **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)**, **Assist Google TV (App Launch)**, or any combination.
 4. Ask the voice assistant to play a YouTube video, open a Netflix title, launch a configured app, or return to the Google TV home screen.
 

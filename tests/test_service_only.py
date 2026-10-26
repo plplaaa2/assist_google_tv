@@ -86,6 +86,19 @@ class LLMApi:
         self.__dict__.update(kwargs)
 
 
+class SelectorStub:
+    def __init__(self, config=None):
+        self.config = config
+
+    def __call__(self, value):
+        return value
+
+
+class SelectorMode(Enum):
+    DROPDOWN = "dropdown"
+    LIST = "list"
+
+
 modules = {
     "homeassistant": {},
     "homeassistant.core": {"HomeAssistant": object, "ServiceCall": object, "SupportsResponse": SupportsResponse, "callback": lambda f: f},
@@ -96,6 +109,16 @@ modules = {
     "homeassistant.helpers.aiohttp_client": {"async_get_clientsession": lambda hass: hass.session},
     "homeassistant.helpers.storage": {"Store": FileStore},
     "homeassistant.helpers.entity_registry": {"async_get": lambda hass: hass.entity_registry},
+    "homeassistant.helpers.selector": {
+        "SelectSelectorMode": SelectorMode,
+        "SelectSelector": SelectorStub,
+        "SelectSelectorConfig": lambda **kwargs: kwargs,
+        "TextSelector": SelectorStub,
+        "TextSelectorType": SimpleNamespace(PASSWORD="password"),
+        "TextSelectorConfig": lambda **kwargs: kwargs,
+        "EntitySelector": SelectorStub,
+        "EntitySelectorConfig": lambda **kwargs: kwargs,
+    },
     "homeassistant.components": {},
     "homeassistant.components.llm": {"LLMTools": LLMTools},
     "homeassistant.components.homeassistant": {},
@@ -116,6 +139,8 @@ for name, attributes in modules.items():
     module.__dict__.update(attributes)
     module.__path__ = []
     sys.modules[name] = module
+sys.modules["homeassistant.helpers"].entity_registry = sys.modules["homeassistant.helpers.entity_registry"]
+sys.modules["homeassistant.helpers"].selector = sys.modules["homeassistant.helpers.selector"]
 
 integration = importlib.import_module("custom_components.assist_google_tv")
 services = importlib.import_module("custom_components.assist_google_tv.services")
@@ -768,16 +793,61 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_config_flow_and_options_empty_input(self):
         flow = flows.YouTubeConfigFlow()
+        result = await flow.async_step_user()
+        self.assertEqual(result["step_id"], "user")
+        api_key_selector = next(
+            value for key, value in result["data_schema"].schema.items()
+            if getattr(key, "schema", key) == "api_key"
+        )
+        self.assertEqual(api_key_selector.config["type"], "password")
         result = await flow.async_step_user({"api_key": " "})
         self.assertEqual(result["errors"], {"base": "api_key_required"})
         result = await flow.async_step_user(self.entry.data)
+        self.assertEqual(result["step_id"], "tv_control")
+        flow.hass = self.hass
+        self.states["remote.tv"] = SimpleNamespace(
+            entity_id="remote.tv", state="on", attributes={"friendly_name": "Living room TV"},
+        )
+        result = await flow.async_step_tv_control({"tv_method": "remote", "tv_entity_id": "remote.tv"})
+        self.assertEqual(result["step_id"], "apps")
+        self.assertIn("tv_selected_apps", result["data_schema"].schema)
+        selected_key = next(
+            key for key in result["data_schema"].schema
+            if getattr(key, "schema", key) == "tv_selected_apps"
+        )
+        self.assertTrue(result["data_schema"].schema[selected_key].config["multiple"])
+        result = await flow.async_step_apps({
+            "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
+        })
+        self.assertEqual(result["step_id"], "playback_mode")
+        result = await flow.async_step_playback_mode({"playback_mode": "cast_fallback"})
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["playback_mode"], "cast_fallback")
+        self.assertEqual(json.loads(result["data"]["tv_apps"])[0]["name"], "YouTube")
         options = flow.async_get_options_flow(self.entry)
         result = await options.async_step_init({"api_key": " "})
-        self.assertEqual(result["errors"], {"base": "api_key_required"})
+        self.assertEqual(result["step_id"], "tv_control")
+        options.hass = self.hass
+        result = await options.async_step_tv_control({"tv_method": "remote", "tv_entity_id": "remote.tv"})
+        self.assertEqual(result["step_id"], "apps")
+        result = await options.async_step_apps({
+            "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
+        })
+        self.assertEqual(result["step_id"], "playback_mode")
+        result = await options.async_step_playback_mode({"playback_mode": "cast_fallback"})
+        self.assertEqual(result["type"], "create_entry")
         flow._async_current_entries = lambda: [self.entry]
         self.assertEqual((await flow.async_step_user())["reason"], "single_instance_allowed")
+
+    async def test_adb_app_candidates_parse_nested_response(self):
+        self.hass.services.async_call.return_value = {
+            "media_player.tv": {
+                "adb_response": "com.netflix.ninja/.MainActivity\ncom.android.settings/.Settings",
+            },
+        }
+        apps = await flows._adb_tv_launchers(self.hass, "media_player.tv")
+        self.assertEqual(apps, [{"name": "Netflix", "launch": "com.netflix.ninja"}])
+        self.hass.services.async_call.assert_awaited_once()
 
     # Discard runtime data and states, then restore only from the saved file.
     async def _restart(self):
