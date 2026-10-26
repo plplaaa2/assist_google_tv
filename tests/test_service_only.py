@@ -642,10 +642,18 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "my-list", "video_ids": "dQw4w9WgXcQ,dQw4w9WgXcQ"})
             await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "my-list", "video_ids": ["jNQXAC9IVRw"]})
         self.assertEqual(request.call_args.args[1], "videos")
-        state = self.states["youtube_content_search._playlist_my_list"]
+        state = self.states["youtube_content_search.playlist_my_list"]
         self.assertEqual(len(json.loads(state.attributes["data"])), 2)
         await self.hass.services.invoke("youtube_playlist_delete", {"id": "my-list"})
         self.assertFalse(self.states)
+
+    async def test_playlist_state_id_is_valid_for_rescene(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
+            await self.hass.services.invoke(
+                "youtube_playlist_save", {"playlist_id": "resc ene", "video_ids": ["dQw4w9WgXcQ"]}
+            )
+        self.assertIn("youtube_content_search.playlist_resc_ene", self.states)
+        self.assertNotIn("youtube_content_search._playlist_resc_ene", self.states)
 
     async def test_playlist_list_returns_summaries_and_video_details(self):
         playlists = self.hass.data[services.DOMAIN][playlist_store.DATA_PLAYLIST_STORE]
@@ -782,13 +790,13 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
             await self.hass.services.invoke("youtube_playlist_save", {"playlist_id": "music", "video_ids": ["dQw4w9WgXcQ"]})
         await self._restart()
-        videos = json.loads(self.states["youtube_content_search._playlist_music"].attributes["data"])
+        videos = json.loads(self.states["youtube_content_search.playlist_music"].attributes["data"])
         self.assertEqual([v["videoId"] for v in videos], ["dQw4w9WgXcQ"])
 
     async def test_renamed_domain_keeps_legacy_playlist_storage_contract(self):
         self.assertEqual(services.DOMAIN, "assist_google_tv")
         self.assertEqual(playlist_store.STORAGE_KEY, "youtube_content_search.playlists")
-        self.assertEqual(playlist_store._ENTITY_PREFIX, "youtube_content_search._playlist_")
+        self.assertEqual(playlist_store._ENTITY_PREFIX, "youtube_content_search.playlist_")
 
     async def test_deletion_survives_restart(self):
         with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
@@ -804,7 +812,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 for video in ["dQw4w9WgXcQ", "jNQXAC9IVRw", "dQw4w9WgXcQ"]
             ])
         await self._restart()
-        videos = json.loads(self.states["youtube_content_search._playlist_music"].attributes["data"])
+        videos = json.loads(self.states["youtube_content_search.playlist_music"].attributes["data"])
         self.assertEqual({v["videoId"] for v in videos}, {"dQw4w9WgXcQ", "jNQXAC9IVRw"})
 
     async def test_save_failure_retains_runtime_and_disk(self):
@@ -813,9 +821,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(repo.store, "async_save", AsyncMock(side_effect=OSError())):
             with self.assertRaises(HAError):
                 await repo.async_delete("music")
-        self.assertIn("youtube_content_search._playlist_music", self.states)
+        self.assertIn("youtube_content_search.playlist_music", self.states)
         await self._restart()
-        self.assertIn("youtube_content_search._playlist_music", self.states)
+        self.assertIn("youtube_content_search.playlist_music", self.states)
 
     async def test_silent_write_failure_detected(self):
         repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
@@ -832,7 +840,20 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         })
         await integration.async_setup_entry(self.hass, self.entry)
         await self._restart()
-        self.assertIn("youtube_content_search._playlist_legacy", self.states)
+        self.assertIn("youtube_content_search.playlist_legacy", self.states)
+        self.assertNotIn("youtube_content_search._playlist_legacy", self.states)
+
+    async def test_rescene_playlist_restores_to_valid_home_assistant_entity_id(self):
+        repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
+        await repo.store.async_save({
+            "playlists": {"rescene": [{"videoId": "dQw4w9WgXcQ"}]},
+        })
+        await self._restart()
+        self.assertIn("youtube_content_search.playlist_rescene", self.states)
+        self.assertEqual(
+            json.loads(self.states["youtube_content_search.playlist_rescene"].attributes["data"])[0]["videoId"],
+            "dQw4w9WgXcQ",
+        )
 
     async def test_invalid_storage_not_overwritten(self):
         repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]
@@ -849,7 +870,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await integration.async_unload_entry(self.hass, self.entry)
         self.assertFalse(self.states)
         await integration.async_setup_entry(self.hass, self.entry)
-        self.assertIn("youtube_content_search._playlist_music", self.states)
+        self.assertIn("youtube_content_search.playlist_music", self.states)
 
     async def test_stale_repository_cannot_write_after_unload(self):
         repo = self.hass.data[services.DOMAIN][services.DATA_PLAYLIST_STORE]

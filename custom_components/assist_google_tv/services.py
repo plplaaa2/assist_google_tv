@@ -19,11 +19,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from .const import (
-    CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN, LEGACY_DOMAIN,
+    CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN,
     PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST, PLAYBACK_MODE_SMARTTUBE,
     PLAYBACK_MODE_CAST_FALLBACK,
 )
-from .playlist_store import DATA_PLAYLIST_STORE
+from .playlist_store import DATA_PLAYLIST_STORE, PLAYLIST_ENTITY_PREFIX
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -213,7 +213,7 @@ async def async_handle_playlist_save(hass: HomeAssistant, request: aiohttp.web.R
         if not sanitized_playlist_id:
             _LOGGER.error("Invalid playlist_id for playlist_save: %s", playlist_id)
             return aiohttp.web.json_response({"error": "Invalid playlist ID"}, status=400)
-        entity_id = f"{LEGACY_DOMAIN}._playlist_{sanitized_playlist_id}"
+        entity_id = f"{PLAYLIST_ENTITY_PREFIX}{sanitized_playlist_id}"
 
         # Get current state data
         new_videos = []
@@ -258,7 +258,7 @@ async def async_handle_playlist_delete(hass: HomeAssistant, request: aiohttp.web
         if not sanitized_playlist_id:
             _LOGGER.error("Invalid playlist_id for playlist_delete: %s", playlist_id)
             return aiohttp.web.json_response({"error": "Invalid playlist ID"}, status=400)
-        entity_id = f"{LEGACY_DOMAIN}._playlist_{sanitized_playlist_id}"
+        entity_id = f"{PLAYLIST_ENTITY_PREFIX}{sanitized_playlist_id}"
         hass.states.async_remove(entity_id)
         return aiohttp.web.json_response({"success": True, "message": f"Playlist '{playlist_id}' deleted"})
 
