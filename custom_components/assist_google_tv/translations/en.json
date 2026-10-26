@@ -26,7 +26,8 @@
       "playback_mode": {
         "title": "YouTube playback mode",
         "data": {
-          "playback_mode": "Playback mode"
+          "playback_mode": "Playback mode",
+          "netflix_search_region": "Netflix search region"
         }
       }
     },
@@ -67,7 +68,8 @@
       "playback_mode": {
         "title": "YouTube playback mode",
         "data": {
-          "playback_mode": "Playback mode"
+          "playback_mode": "Playback mode",
+          "netflix_search_region": "Netflix search region"
         }
       }
     },

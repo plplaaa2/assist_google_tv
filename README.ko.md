@@ -33,7 +33,7 @@ Home Assistant에서 Google Cast 및/또는 Android TV Remote를 먼저 설정�
 - **공식 YouTube 앱 → Cast fallback**
 - **Google Cast만 사용**
 
-앱 링크 방식은 Android TV Remote의 `remote` 엔티티와 fallback용 Google Cast `media_player`가 필요합니다. Cast 전용 방식은 Google Cast `media_player`를 사용합니다. Netflix 액션은 Android TV Remote를 사용하며 YouTube API 키가 필요하지 않습니다.
+앱 링크 방식은 Android TV Remote의 `remote` 엔티티와 fallback용 Google Cast `media_player`가 필요합니다. Cast 전용 방식은 Google Cast `media_player`를 사용합니다. Netflix 액션은 Android TV Remote를 사용하며 YouTube API 키가 필요하지 않습니다. 설정 마지막 단계에서 Netflix 검색 지역을 선택할 수 있으며, 선택한 지역의 Netflix 작품 페이지로 검색 범위를 제한합니다. 기본 지역은 대한민국입니다.
 
 옵션에서 키를 바꿀 때 입력란을 비워 두면 기존 키를 유지합니다. API 키는 자동화 YAML에 넣지 마세요.
 

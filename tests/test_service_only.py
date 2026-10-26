@@ -507,7 +507,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             title_id = await services._async_netflix_title_id(self.hass, "장송의 프리렌")
         self.assertEqual(title_id, "81726714")
         self.assertEqual(request.call_args.args[0], {
-            "q": "site:netflix.com/title 장송의 프리렌", "b": "", "kl": "", "kp": "-1",
+            "q": "site:netflix.com/kr/title 장송의 프리렌", "b": "", "kl": "", "kp": "-1",
         })
 
     async def test_netflix_title_lookup_skips_search_challenge_pages(self):
@@ -518,6 +518,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         retry.assert_awaited_once()
 
     async def test_netflix_title_lookup_retries_challenge_with_curl_and_parses_result(self):
+        self.hass.data[services.DOMAIN]["netflix_search_region"] = "us"
         result_html = ('<div class="result"><a class="result__a" '
                        'href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.netflix.com%2Ftitle%2F81726714">'
                        'Frieren</a></div>')
@@ -526,7 +527,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             title_id = await services._async_netflix_title_id(self.hass, "Frieren")
         self.assertEqual(title_id, "81726714")
         retry.assert_awaited_once_with({
-            "q": "site:netflix.com/title Frieren", "b": "", "kl": "", "kp": "-1",
+            "q": "site:netflix.com/us/title Frieren", "b": "", "kl": "", "kp": "-1",
         })
 
     async def test_netflix_title_lookup_ignores_non_result_links(self):
@@ -820,9 +821,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
         })
         self.assertEqual(result["step_id"], "playback_mode")
-        result = await flow.async_step_playback_mode({"playback_mode": "cast_fallback"})
+        result = await flow.async_step_playback_mode({"playback_mode": "cast_fallback", "netflix_search_region": "kr"})
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["playback_mode"], "cast_fallback")
+        self.assertEqual(result["data"]["netflix_search_region"], "kr")
         self.assertEqual(json.loads(result["data"]["tv_apps"])[0]["name"], "YouTube")
         options = flow.async_get_options_flow(self.entry)
         result = await options.async_step_init({"api_key": " "})
@@ -834,8 +836,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
         })
         self.assertEqual(result["step_id"], "playback_mode")
-        result = await options.async_step_playback_mode({"playback_mode": "cast_fallback"})
+        result = await options.async_step_playback_mode({"playback_mode": "cast_fallback", "netflix_search_region": "us"})
         self.assertEqual(result["type"], "create_entry")
+        self.assertEqual(result["data"]["netflix_search_region"], "us")
         flow._async_current_entries = lambda: [self.entry]
         self.assertEqual((await flow.async_step_user())["reason"], "single_instance_allowed")
 

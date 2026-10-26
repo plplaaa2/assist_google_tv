@@ -26,7 +26,8 @@
       "playback_mode": {
         "title": "YouTube 재생 방식",
         "data": {
-          "playback_mode": "재생 방식"
+          "playback_mode": "재생 방식",
+          "netflix_search_region": "Netflix 검색 지역"
         }
       }
     },
@@ -67,7 +68,8 @@
       "playback_mode": {
         "title": "YouTube 재생 방식",
         "data": {
-          "playback_mode": "재생 방식"
+          "playback_mode": "재생 방식",
+          "netflix_search_region": "Netflix 검색 지역"
         }
       }
     },

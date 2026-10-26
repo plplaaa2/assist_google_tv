@@ -33,7 +33,7 @@ Set up Google Cast and/or Android TV Remote in Home Assistant, then follow the i
 - **Official YouTube app → Cast fallback**
 - **Google Cast only**
 
-App-link modes need an Android TV Remote `remote` entity and a Google Cast `media_player` for fallback. Cast-only mode uses a Google Cast `media_player`. Netflix actions use Android TV Remote and do not require a YouTube API key.
+App-link modes need an Android TV Remote `remote` entity and a Google Cast `media_player` for fallback. Cast-only mode uses a Google Cast `media_player`. Netflix actions use Android TV Remote and do not require a YouTube API key. Choose a Netflix search region in the final setup/options step; searches are scoped to that region's Netflix title pages (Korea by default).
 
 When changing the key in integration options, leave the field blank to keep the saved value. Keep the key out of automation YAML.
 

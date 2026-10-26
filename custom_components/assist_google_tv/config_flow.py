@@ -10,11 +10,13 @@ from homeassistant.helpers.selector import SelectSelectorMode
 
 from .const import (
     CONF_API_KEY,
+    CONF_NETFLIX_SEARCH_REGION,
     CONF_PLAYBACK_MODE,
     CONF_TV_APPS,
     CONF_TV_ENTITY_ID,
     CONF_TV_METHOD,
     DEFAULT_PLAYBACK_MODE,
+    DEFAULT_NETFLIX_SEARCH_REGION,
     DOMAIN,
     PLAYBACK_MODE_APP_LINKS,
     PLAYBACK_MODE_CAST,
@@ -31,6 +33,14 @@ _PLAYBACK_OPTIONS = {
     PLAYBACK_MODE_CAST: "Google Cast only",
     PLAYBACK_MODE_YOUTUBE_APP: "Official YouTube app → Cast fallback",
     PLAYBACK_MODE_SMARTTUBE: "SmartTube → Cast fallback",
+}
+_NETFLIX_SEARCH_REGIONS = {
+    "kr": "대한민국 (한국어 Netflix)",
+    "us": "United States",
+    "jp": "日本 (Japan)",
+    "gb": "United Kingdom",
+    "ca": "Canada",
+    "au": "Australia",
 }
 _MEDIA_TERMS = (
     "youtube", "netflix", "prime video", "amazon video", "disney", "spotify",
@@ -111,12 +121,18 @@ def _app_schema(candidates: list[dict], selected: list[str], custom_apps: str = 
     )
 
 
-def _playback_schema(default: str):
+def _playback_schema(default: str, netflix_region: str):
     return vol.Schema(
         {
             vol.Required(CONF_PLAYBACK_MODE, default=default): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[{"value": key, "label": label} for key, label in _PLAYBACK_OPTIONS.items()],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Required(CONF_NETFLIX_SEARCH_REGION, default=netflix_region): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[{"value": key, "label": label} for key, label in _NETFLIX_SEARCH_REGIONS.items()],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
@@ -361,10 +377,14 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         defaults = getattr(self, "_flow_data", {})
         if user_input is not None:
             defaults[CONF_PLAYBACK_MODE] = _normalize_playback_mode(user_input[CONF_PLAYBACK_MODE])
+            defaults[CONF_NETFLIX_SEARCH_REGION] = _normalize_netflix_region(user_input[CONF_NETFLIX_SEARCH_REGION])
             return self.async_create_entry(title="Assist Google TV", data=defaults)
         return self.async_show_form(
             step_id="playback_mode",
-            data_schema=_playback_schema(defaults.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE)),
+            data_schema=_playback_schema(
+                defaults.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE),
+                defaults.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
+            ),
         )
 
     @staticmethod
@@ -467,11 +487,15 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
             self._flow_data[CONF_PLAYBACK_MODE] = _normalize_playback_mode(
                 user_input[CONF_PLAYBACK_MODE]
             )
+            self._flow_data[CONF_NETFLIX_SEARCH_REGION] = _normalize_netflix_region(
+                user_input[CONF_NETFLIX_SEARCH_REGION]
+            )
             return self.async_create_entry(title="", data=self._flow_data)
         return self.async_show_form(
             step_id="playback_mode",
             data_schema=_playback_schema(
-                self._flow_data.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE)
+                self._flow_data.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE),
+                self._flow_data.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
             ),
         )
 
@@ -492,3 +516,7 @@ def _apps_from_settings(settings: dict):
 def _normalize_playback_mode(value: str):
     valid_modes = {PLAYBACK_MODE_CAST, *PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST_FALLBACK}
     return value if value in valid_modes else DEFAULT_PLAYBACK_MODE
+
+
+def _normalize_netflix_region(value: str):
+    return value if value in _NETFLIX_SEARCH_REGIONS else DEFAULT_NETFLIX_SEARCH_REGION

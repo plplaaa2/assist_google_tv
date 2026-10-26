@@ -5,7 +5,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 
-from .const import CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN
+from .const import (
+    CONF_API_KEY,
+    CONF_NETFLIX_SEARCH_REGION,
+    CONF_PLAYBACK_MODE,
+    DEFAULT_NETFLIX_SEARCH_REGION,
+    DEFAULT_PLAYBACK_MODE,
+    DOMAIN,
+)
 from .playlist_store import DATA_PLAYLIST_STORE, PlaylistStore
 from .services import async_setup_services
 
@@ -26,6 +33,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         runtime[DATA_PLAYLIST_STORE] = playlists
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
     hass.data[DOMAIN][CONF_PLAYBACK_MODE] = _entry_playback_mode(config_entry)
+    hass.data[DOMAIN][CONF_NETFLIX_SEARCH_REGION] = config_entry.options.get(
+        CONF_NETFLIX_SEARCH_REGION,
+        config_entry.data.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
+    )
     # Register selectable playback and app-launch providers; related: llm.py and app_tools.py.
     from .llm import async_register_api
 
@@ -48,6 +59,10 @@ async def async_setup_entry_credentials(hass: HomeAssistant, config_entry: Confi
         raise ConfigEntryError("YouTube API key is required")
     hass.data.setdefault(DOMAIN, {})[CONF_API_KEY] = api_key.strip()
     hass.data[DOMAIN][CONF_PLAYBACK_MODE] = _entry_playback_mode(config_entry)
+    hass.data[DOMAIN][CONF_NETFLIX_SEARCH_REGION] = config_entry.options.get(
+        CONF_NETFLIX_SEARCH_REGION,
+        config_entry.data.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
+    )
 
 
 # Legacy entries without a playback option retain the original Cast behavior.

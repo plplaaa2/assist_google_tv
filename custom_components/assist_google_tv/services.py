@@ -19,7 +19,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any, Optional
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from .const import (
-    CONF_API_KEY, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE, DOMAIN,
+    CONF_API_KEY, CONF_NETFLIX_SEARCH_REGION, CONF_PLAYBACK_MODE,
+    DEFAULT_NETFLIX_SEARCH_REGION, DEFAULT_PLAYBACK_MODE, DOMAIN,
     PLAYBACK_MODE_APP_LINKS, PLAYBACK_MODE_CAST, PLAYBACK_MODE_SMARTTUBE,
     PLAYBACK_MODE_CAST_FALLBACK,
 )
@@ -429,8 +430,11 @@ class _NetflixSearchResultsParser(HTMLParser):
 
 
 async def _async_netflix_title_id(hass: HomeAssistant, query: str) -> str:
-    """Resolve Netflix title IDs with standalone DDG request and parsing code."""
-    search_query = f"site:netflix.com/title {query}"
+    """Resolve Netflix IDs with a region-scoped DDG query; related: config_flow.py, const.py."""
+    region = hass.data.get(DOMAIN, {}).get(
+        CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION
+    )
+    search_query = f"site:netflix.com/{region}/title {query}"
     search_data = {"q": search_query, "b": "", "kl": "", "kp": "-1"}
     try:
         status, html = await _async_netflix_search_httpx(search_data)
