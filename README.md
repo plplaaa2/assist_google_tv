@@ -41,7 +41,7 @@ When changing the key in integration options, leave the field blank to keep the 
 
 ### Search and play YouTube
 
-Use a search query or a YouTube video URL/ID. Supply exactly one of `query` and `video`.
+Use a search query or a YouTube video URL/ID or playlist URL. Supply exactly one of `query` and `video`. A playlist URL starts its first video and passes the playlist to YouTube playback.
 
 ```yaml
 action: assist_google_tv.youtube_search_play

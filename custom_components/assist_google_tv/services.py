@@ -710,6 +710,22 @@ def _video_id_from_input(value: str) -> str:
     return candidate
 
 
+# Parse a playlist URL before video URLs; related: async_search_play and _async_play_video.
+def _playlist_id_from_input(value: str) -> Optional[str]:
+    """Extract a valid playlist ID from a supported YouTube URL."""
+    try:
+        parsed = urllib.parse.urlsplit(value.strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in ("http", "https") or host not in {
+            "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+        }:
+            return None
+        playlist_id = urllib.parse.parse_qs(parsed.query).get("list", [""])[0]
+        return playlist_id if re.fullmatch(r"[A-Za-z0-9_-]{10,100}", playlist_id) else None
+    except (ValueError, UnicodeError):
+        return None
+
+
 # Validate selected playback targets before API requests; related: llm.py/services.yaml.
 async def async_search_play(hass: HomeAssistant, call: ServiceCall):
     """Search for or directly select one video and dispatch via configured playback mode."""
@@ -723,8 +739,18 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         raise ServiceValidationError("Choose a remote provided by Android TV Remote")
     if not app_link_mode and not is_cast_player(hass, call.data["entity_id"]):
         raise ServiceValidationError("Choose a media player provided by Google Cast")
+    playlist_id = _playlist_id_from_input(video) if video else None
     if video:
-        video_id = _video_id_from_input(video)
+        if playlist_id:
+            data = await _async_youtube_request(hass, "playlistItems", {
+                "part": "contentDetails", "playlistId": playlist_id, "maxResults": 1,
+            })
+            items = data.get("items") or []
+            video_id = (items[0].get("contentDetails") or {}).get("videoId") if items else None
+            if not isinstance(video_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+                raise HomeAssistantError("No playable video found in the YouTube playlist")
+        else:
+            video_id = _video_id_from_input(video)
     else:
         data = await _async_youtube_request(hass, "search", {
             "part": "snippet", "type": "video", "maxResults": 1, "q": query,
@@ -734,12 +760,15 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
             raise HomeAssistantError("No YouTube video found")
         video_id = items[0]["id"]["videoId"]
     await _async_play_video(
-        hass, video_id, call.data["entity_id"], call.data.get("cast_entity_id"),
+        hass, video_id, call.data["entity_id"], call.data.get("cast_entity_id"), playlist_id,
     )
 
 
 # Share single-video dispatch between search and local playlist playback; related: services.yaml.
-async def _async_play_video(hass: HomeAssistant, video_id: str, entity_id: str, cast_entity_id: Optional[str] = None):
+async def _async_play_video(
+    hass: HomeAssistant, video_id: str, entity_id: str,
+    cast_entity_id: Optional[str] = None, playlist_id: Optional[str] = None,
+):
     """Dispatch one known YouTube video using the configured app/Cast mode."""
     mode = playback_mode(hass)
     app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
@@ -752,8 +781,12 @@ async def _async_play_video(hass: HomeAssistant, video_id: str, entity_id: str, 
     )
     if app_link_mode:
         activity = f"https://www.youtube.com/watch?v={video_id}"
+        if playlist_id:
+            activity += f"&list={urllib.parse.quote(playlist_id)}"
         if mode in (PLAYBACK_MODE_SMARTTUBE, PLAYBACK_MODE_CAST_FALLBACK):
             activity = f"vnd.youtube.launch://www.youtube.com/watch?v={video_id}"
+            if playlist_id:
+                activity += f"&list={urllib.parse.quote(playlist_id)}"
         try:
             await hass.services.async_call(
                 "remote", "turn_on", {
@@ -761,6 +794,14 @@ async def _async_play_video(hass: HomeAssistant, video_id: str, entity_id: str, 
                     "activity": activity,
                 }, blocking=True,
             )
+            if playlist_id and mode in (PLAYBACK_MODE_SMARTTUBE, PLAYBACK_MODE_CAST_FALLBACK):
+                # SmartTube opens playlist links with the first item selected; related: async_playlist_play_service.
+                await asyncio.sleep(2)
+                await hass.services.async_call(
+                    "remote", "send_command", {
+                        "entity_id": entity_id, "command": "DPAD_CENTER",
+                    }, blocking=True,
+                )
             return
         except HomeAssistantError:
             if mode not in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,)):
@@ -770,15 +811,20 @@ async def _async_play_video(hass: HomeAssistant, video_id: str, entity_id: str, 
                     "App-link playback failed; configure a valid Cast fallback entity"
                 ) from None
             _LOGGER.warning("Android TV app-link playback failed; trying Google Cast fallback")
-            await _async_cast_play(hass, cast_entity_id, video_id)
+            await _async_cast_play(hass, cast_entity_id, video_id, playlist_id)
             return
-    await _async_cast_play(hass, entity_id, video_id)
+    await _async_cast_play(hass, entity_id, video_id, playlist_id)
 
 
 # Keep Cast dispatch shared by the direct and fallback playback paths; related: async_search_play.
-async def _async_cast_play(hass: HomeAssistant, entity_id: str, video_id: str, *, enqueue: bool = False) -> None:
+async def _async_cast_play(
+    hass: HomeAssistant, entity_id: str, video_id: str,
+    playlist_id: Optional[str] = None, *, enqueue: bool = False,
+) -> None:
     """Send or enqueue a YouTube Cast request for one validated video ID."""
     media_content_id = {"app_name": "youtube", "media_id": video_id}
+    if playlist_id:
+        media_content_id["playlist_id"] = playlist_id
     if enqueue:
         media_content_id["enqueue"] = True
     await hass.services.async_call(
@@ -904,6 +950,15 @@ async def async_playlist_play_service(hass: HomeAssistant, call: ServiceCall):
     if cast_entity_id and not is_cast_player(hass, cast_entity_id):
         raise ServiceValidationError("Choose a Google Cast player")
     await _async_play_video(hass, videos[0]["videoId"], entity_id, cast_entity_id)
+    # SmartTube opens playlist links with the first item selected; activate it after the app settles.
+    if mode == PLAYBACK_MODE_SMARTTUBE:
+        await asyncio.sleep(1)
+        if entity_id.startswith("remote."):
+            await hass.services.async_call(
+                "remote", "send_command", {
+                    "entity_id": entity_id, "command": "DPAD_CENTER",
+                }, blocking=True,
+            )
     queue_entity = cast_entity_id if app_link_mode else entity_id
     for video in videos[1:]:
         await _async_cast_play(hass, queue_entity, video["videoId"], enqueue=True)

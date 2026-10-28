@@ -50,7 +50,7 @@ class YouTubeSearchPlayTool(llm.Tool):
     name = f"{DOMAIN}__youtube_search_play"
     title = "YouTube 검색 재생"
     integration = DOMAIN
-    description = "Search YouTube with query, or play a YouTube URL/video ID directly. Provide exactly one of query or video."
+    description = "Search YouTube with query, or play a YouTube video URL/ID or playlist URL directly. Provide exactly one of query or video."
     parameters = schema_api.Schema({
         schema_api.Optional("query"): str,
         schema_api.Optional("video"): str,
@@ -159,7 +159,7 @@ def _tool_data(hass, llm_context):
         } for target in targets]
     prompt = (
         "Use the YouTube youtube_search_play tool when asked to play a YouTube video. "
-        "Provide exactly one of query (search terms) or video (YouTube video URL or 11-character video ID). "
+        "Provide exactly one of query (search terms) or video (YouTube video URL, 11-character video ID, or playlist URL). "
         + ("Try the selected Android TV app first, then Google Cast if it reports an error. Include remote entity_id and cast_entity_id. "
            if playback_mode(hass) in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
            else "Use the Android TV Remote SmartTube app link. "

@@ -714,6 +714,47 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                     {"app_name": "youtube", "media_id": "dQw4w9WgXcQ"},
                 )
 
+    async def test_youtube_playlist_url_casts_first_item_with_playlist_id(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={
+            "items": [{"contentDetails": {"videoId": "dQw4w9WgXcQ"}}],
+        })) as request:
+            await self.hass.services.invoke("youtube_search_play", {
+                "video": "https://www.youtube.com/playlist?list=PL1234567890",
+                "entity_id": "media_player.tv",
+            })
+        request.assert_awaited_once_with(self.hass, "playlistItems", {
+            "part": "contentDetails", "playlistId": "PL1234567890", "maxResults": 1,
+        })
+        payload = json.loads(self.hass.services.async_call.call_args.args[2]["media_content_id"])
+        self.assertEqual(payload, {
+            "app_name": "youtube", "media_id": "dQw4w9WgXcQ", "playlist_id": "PL1234567890",
+        })
+
+    async def test_youtube_playlist_url_starts_first_smarttube_item(self):
+        self.hass.data[services.DOMAIN]["playback_mode"] = "smarttube_fallback"
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={
+            "items": [{"contentDetails": {"videoId": "dQw4w9WgXcQ"}}],
+        })), patch.object(services.asyncio, "sleep", AsyncMock()) as sleep:
+            await self.hass.services.invoke("youtube_search_play", {
+                "video": "https://www.youtube.com/playlist?list=PL1234567890",
+                "entity_id": "remote.tv", "cast_entity_id": "media_player.tv",
+            })
+        sleep.assert_awaited_once_with(2)
+        launch, select = self.hass.services.async_call.await_args_list
+        self.assertEqual(launch.args[2]["activity"],
+                         "vnd.youtube.launch://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL1234567890")
+        self.assertEqual(select.args[:2], ("remote", "send_command"))
+        self.assertEqual(select.args[2], {"entity_id": "remote.tv", "command": "DPAD_CENTER"})
+
+    async def test_empty_youtube_playlist_url_reports_no_playable_video(self):
+        with patch.object(services, "_async_youtube_request", AsyncMock(return_value={"items": []})):
+            with self.assertRaisesRegex(HAError, "No playable video found"):
+                await self.hass.services.invoke("youtube_search_play", {
+                    "video": "https://youtube.com/playlist?list=PL1234567890",
+                    "entity_id": "media_player.tv",
+                })
+        self.hass.services.async_call.assert_not_awaited()
+
     async def test_direct_video_input_validation_and_query_exclusivity(self):
         for data in [
             {"video": "https://example.com/watch?v=dQw4w9WgXcQ", "entity_id": "media_player.tv"},
@@ -804,7 +845,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         calls = self.hass.services.async_call.call_args_list
         self.assertEqual(calls[0].args[:2], ("remote", "turn_on"))
         self.assertEqual(calls[0].args[2]["activity"], "vnd.youtube.launch://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        queued = json.loads(calls[1].args[2]["media_content_id"])
+        self.assertEqual(calls[1].args[:2], ("remote", "send_command"))
+        self.assertEqual(calls[1].args[2], {"entity_id": "remote.tv", "command": "DPAD_CENTER"})
+        queued = json.loads(calls[2].args[2]["media_content_id"])
         self.assertEqual(queued["media_id"], "jNQXAC9IVRw")
         self.assertTrue(queued["enqueue"])
 

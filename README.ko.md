@@ -41,7 +41,7 @@ Home Assistant에서 Google Cast 및/또는 Android TV Remote를 먼저 설정�
 
 ### YouTube 검색 및 재생
 
-검색어 `query` 또는 YouTube 영상 URL/ID `video` 중 하나를 입력합니다.
+검색어 `query` 또는 YouTube 영상 URL/ID·재생목록 URL `video` 중 하나를 입력합니다. 재생목록 URL은 첫 번째 영상을 재생하고 YouTube 재생목록 정보를 함께 전달합니다.
 
 ```yaml
 action: assist_google_tv.youtube_search_play

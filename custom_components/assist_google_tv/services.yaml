@@ -1,6 +1,6 @@
 youtube_search_play:
   name: YouTube 검색 재생
-  description: 검색어로 YouTube 영상을 찾거나 영상 URL/ID로 지정해 설정한 앱 링크 후 Cast fallback 또는 Cast만 재생합니다. query와 video 중 하나만 입력하세요.
+  description: 검색어로 YouTube 영상을 찾거나 영상·재생목록 URL/ID로 지정해 설정한 앱 링크 후 Cast fallback 또는 Cast만 재생합니다. query와 video 중 하나만 입력하세요.
   fields:
     query:
       name: 검색어
@@ -11,7 +11,7 @@ youtube_search_play:
         text:
     video:
       name: 영상 URL 또는 ID
-      description: YouTube 영상 URL 또는 11자리 영상 ID입니다. query와 함께 입력하지 마세요.
+      description: YouTube 영상 URL·11자리 영상 ID 또는 재생목록 URL입니다. query와 함께 입력하지 마세요.
       required: false
       example: https://youtu.be/dQw4w9WgXcQ
       selector:
