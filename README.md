@@ -12,7 +12,7 @@ Control Google TV with Home Assistant Assist. Search and play YouTube videos, op
 
 ### HACS
 
-[![Open this repository in Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=plplaaa2&repository=https%3A%2F%2Fgithub.com%2Fplplaaa2%2Fassist_google_tv&category=integration)
+[![Open this repository in Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=plplaaa2&repository=https%3A%2F%2Fassist_google_tv&category=integration)
 
 Install the integration, restart Home Assistant, then add **Assist Google TV** from **Settings → Devices & services → Add integration**.
 
