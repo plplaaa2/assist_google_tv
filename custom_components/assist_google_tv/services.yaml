@@ -66,6 +66,11 @@ netflix_play:
         number:
           min: 1
           mode: box
+    latest:
+      name: 최신화
+      description: 공개 작품 페이지에 표시된 가장 높은 누적 회차를 엽니다. 시즌과 회차는 비워 두세요.
+      selector:
+        boolean:
     entity_id:
       name: 재생 대상
       description: Android TV Remote 리모컨 엔티티

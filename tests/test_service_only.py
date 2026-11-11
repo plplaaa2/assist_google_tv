@@ -577,6 +577,25 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await services._async_netflix_episode_id(self.hass, "999", 2, 4), "203")
             self.assertEqual(await services._async_netflix_episode_id(self.hass, "999", None, 52), "203")
 
+    async def test_netflix_latest_plays_highest_listed_episode(self):
+        with patch.object(services, "_async_netflix_title_id", AsyncMock(return_value="999")), \
+                patch.object(services, "_async_netflix_request", AsyncMock(return_value="")), \
+                patch.object(services, "_netflix_episode_seasons", return_value=[[(52, 203), (50, 201)], [(1, 100)]]):
+            await self.hass.services.invoke("netflix_play", {
+                "query": "Frieren", "latest": True, "entity_id": "remote.tv",
+            })
+        self.hass.services.async_call.assert_awaited_once_with(
+            "remote", "turn_on", {
+                "entity_id": "remote.tv",
+                "activity": "https://www.netflix.com/watch/203?source=30",
+            }, blocking=True,
+        )
+
+    async def test_netflix_latest_rejects_empty_episode_list(self):
+        with patch.object(services, "_async_netflix_request", AsyncMock(return_value="")):
+            with self.assertRaisesRegex(services.HomeAssistantError, "Could not find any episodes"):
+                await services._async_netflix_episode_id(self.hass, "999", None, None, latest=True)
+
     async def test_netflix_title_lookup_decodes_localized_search_links(self):
         response = ('<div class="result"><div class="result__title"><a class="result__a" '
                     'href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.netflix.com%2Fkr%2Ftitle%2F81726714&amp;rut=abc">'

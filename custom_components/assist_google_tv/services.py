@@ -580,23 +580,34 @@ async def _async_dismiss_screensaver(
     return True
 
 
+# Resolve numbered or latest Netflix episodes; related: llm.py and services.yaml.
 async def _async_netflix_episode_id(
-    hass: HomeAssistant, title_id: str, season: int | None, episode: int
+    hass: HomeAssistant, title_id: str, season: int | None, episode: int | None,
+    *, latest: bool = False,
 ) -> str:
-    """Resolve a local season episode or a global episode number to its video ID."""
+    """Resolve a numbered episode or the highest listed episode to its video ID."""
     html = await _async_netflix_request(
         hass,
         f"https://www.netflix.com/title/{title_id}",
         headers={"Accept-Language": "en-US,en;q=0.9", "User-Agent": "Mozilla/5.0"},
     )
     seasons = _netflix_episode_seasons(html)
+    if latest:
+        latest_episode = max(
+            (entry for episodes in seasons for entry in episodes),
+            key=lambda entry: entry[0],
+            default=None,
+        )
+        if latest_episode is None:
+            raise HomeAssistantError("Could not find any episodes for the selected Netflix title")
+        return str(latest_episode[1])
     if season is None:
         for episodes in seasons:
             for global_number, video_id in episodes:
                 if global_number == episode:
                     return str(video_id)
         raise HomeAssistantError(f"Could not find Netflix episode {episode} for title ID {title_id}")
-    if season > len(seasons) or episode > len(seasons[season - 1]):
+    if episode is None or season > len(seasons) or episode > len(seasons[season - 1]):
         raise HomeAssistantError(f"Could not find Netflix S{season}E{episode} for title ID {title_id}")
     return str(seasons[season - 1][episode - 1][1])
 
@@ -625,9 +636,12 @@ async def async_netflix_play(hass: HomeAssistant, call: ServiceCall) -> None:
     query = (call.data.get("query") or "").strip()
     season = call.data.get("season")
     episode = call.data.get("episode")
+    latest = call.data.get("latest", False)
     entity_id = call.data["entity_id"]
     if not query:
         raise ServiceValidationError("Provide a Netflix title name")
+    if latest and (season is not None or episode is not None):
+        raise ServiceValidationError("Use latest without specifying a season or episode")
     if season is not None and episode is None:
         raise ServiceValidationError("Provide an episode when specifying a season")
     if (season is not None and season < 1) or (episode is not None and episode < 1):
@@ -636,8 +650,8 @@ async def async_netflix_play(hass: HomeAssistant, call: ServiceCall) -> None:
         raise ServiceValidationError("Choose a remote provided by Android TV Remote")
 
     title_id = await _async_netflix_title_id(hass, query)
-    if episode is not None:
-        content_id = await _async_netflix_episode_id(hass, title_id, season, episode)
+    if latest or episode is not None:
+        content_id = await _async_netflix_episode_id(hass, title_id, season, episode, latest=latest)
         activity = f"https://www.netflix.com/watch/{content_id}?source=30"
     elif await _async_netflix_is_movie(hass, title_id):
         activity = f"https://www.netflix.com/watch/{title_id}?source=30"
@@ -996,6 +1010,7 @@ async def async_setup_services(hass: HomeAssistant):
             vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^remote\.")),
             vol.Optional("season"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Optional("episode"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("latest"): bool,
         })),
         "youtube_playlist_save": (_playlist_save_service, vol.Schema({
             vol.Required("playlist_id"): cv.string,
