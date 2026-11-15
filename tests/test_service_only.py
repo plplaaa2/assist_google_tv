@@ -835,6 +835,13 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(details["videos"][0]["channel"], "Rick Astley")
 
     async def test_playlist_play_cast_queues_all_videos_in_order(self):
+        # Verify direct Cast and queue dispatch in an app-link mode; related: services.py.
+        self.hass.data[services.DOMAIN]["playback_mode"] = "smarttube_fallback"
+        await self.hass.services.invoke("youtube_search_play", {
+            "video": "dQw4w9WgXcQ", "entity_id": "media_player.tv",
+        })
+        self.assertEqual(self.hass.services.async_call.await_args.args[:2], ("media_player", "play_media"))
+        self.hass.services.async_call.reset_mock()
         playlists = self.hass.data[services.DOMAIN][playlist_store.DATA_PLAYLIST_STORE]
         await playlists.async_merge("music", [
             {"videoId": "dQw4w9WgXcQ", "title": "First"},

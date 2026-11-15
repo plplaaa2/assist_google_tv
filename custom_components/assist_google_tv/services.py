@@ -749,10 +749,13 @@ async def async_search_play(hass: HomeAssistant, call: ServiceCall):
         raise ServiceValidationError("Provide exactly one of a search query or video URL/ID")
     mode = playback_mode(hass)
     app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
-    if app_link_mode and not is_app_link_player(hass, call.data["entity_id"]):
-        raise ServiceValidationError("Choose a remote provided by Android TV Remote")
-    if not app_link_mode and not is_cast_player(hass, call.data["entity_id"]):
-        raise ServiceValidationError("Choose a media player provided by Google Cast")
+    # Accept direct Cast targets in app-link modes; related: services.yaml.
+    entity_id = call.data["entity_id"]
+    if not is_cast_player(hass, entity_id):
+        if app_link_mode and not is_app_link_player(hass, entity_id):
+            raise ServiceValidationError("Choose an Android TV Remote or Google Cast entity")
+        if not app_link_mode:
+            raise ServiceValidationError("Choose a media player provided by Google Cast")
     playlist_id = _playlist_id_from_input(video) if video else None
     if video:
         if playlist_id:
@@ -786,10 +789,15 @@ async def _async_play_video(
     """Dispatch one known YouTube video using the configured app/Cast mode."""
     mode = playback_mode(hass)
     app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
-    valid_target = is_app_link_player(hass, entity_id) if app_link_mode else is_cast_player(hass, entity_id)
-    if not valid_target:
-        message = "Choose a remote provided by Android TV Remote" if app_link_mode else "Choose a media player provided by Google Cast"
-        raise ServiceValidationError(message)
+    # Dispatch explicit Cast targets directly; related: services.yaml.
+    if is_cast_player(hass, entity_id):
+        await _async_dismiss_screensaver(hass, None)
+        await _async_cast_play(hass, entity_id, video_id, playlist_id)
+        return
+    if not app_link_mode:
+        raise ServiceValidationError("Choose a media player provided by Google Cast")
+    if not is_app_link_player(hass, entity_id):
+        raise ServiceValidationError("Choose an Android TV Remote or Google Cast entity")
     await _async_dismiss_screensaver(
         hass, entity_id if app_link_mode else None,
     )
@@ -827,7 +835,6 @@ async def _async_play_video(
             _LOGGER.warning("Android TV app-link playback failed; trying Google Cast fallback")
             await _async_cast_play(hass, cast_entity_id, video_id, playlist_id)
             return
-    await _async_cast_play(hass, entity_id, video_id, playlist_id)
 
 
 # Keep Cast dispatch shared by the direct and fallback playback paths; related: async_search_play.
@@ -958,14 +965,18 @@ async def async_playlist_play_service(hass: HomeAssistant, call: ServiceCall):
     mode = playback_mode(hass)
     entity_id = call.data["entity_id"]
     cast_entity_id = call.data.get("cast_entity_id")
-    app_link_mode = mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
+    # Queue direct Cast playlists on the selected player; related: services.yaml.
+    app_link_mode = (
+        mode in (PLAYBACK_MODE_APP_LINKS + (PLAYBACK_MODE_CAST_FALLBACK,))
+        and is_app_link_player(hass, entity_id)
+    )
     if app_link_mode and len(videos) > 1 and not cast_entity_id:
         raise ServiceValidationError("Choose a Google Cast entity to queue the remaining videos")
     if cast_entity_id and not is_cast_player(hass, cast_entity_id):
         raise ServiceValidationError("Choose a Google Cast player")
     await _async_play_video(hass, videos[0]["videoId"], entity_id, cast_entity_id)
     # SmartTube opens playlist links with the first item selected; activate it after the app settles.
-    if mode == PLAYBACK_MODE_SMARTTUBE:
+    if app_link_mode and mode == PLAYBACK_MODE_SMARTTUBE:
         await asyncio.sleep(1)
         if entity_id.startswith("remote."):
             await hass.services.async_call(
