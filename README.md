@@ -1,4 +1,4 @@
-# Assist Google TV
+# Assist for Google TV
 
 Control Google TV with Home Assistant Assist. Search and play YouTube videos, open Netflix titles and episodes, and manage local YouTube playlists.
 
