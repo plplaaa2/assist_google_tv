@@ -8,12 +8,14 @@ import re
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN
+from .const import LEGACY_DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-STORAGE_KEY = f"{DOMAIN}.playlists"
+STORAGE_KEY = f"{LEGACY_DOMAIN}.playlists"
 DATA_PLAYLIST_STORE = "playlist_store"
-_ENTITY_PREFIX = f"{DOMAIN}._playlist_"
+PLAYLIST_ENTITY_PREFIX = f"{LEGACY_DOMAIN}.playlist_"
+_ENTITY_PREFIX = PLAYLIST_ENTITY_PREFIX
+_OLD_ENTITY_PREFIX = f"{LEGACY_DOMAIN}._playlist_"
 
 
 class PlaylistStore:
@@ -53,10 +55,16 @@ class PlaylistStore:
                 playlists = self._validate(data["playlists"])
             else:
                 playlists = {}
+                old_state_ids = []
                 for state in self.hass.states.async_all():
-                    if not state.entity_id.startswith(_ENTITY_PREFIX):
+                    if state.entity_id.startswith(_ENTITY_PREFIX):
+                        prefix = _ENTITY_PREFIX
+                    elif state.entity_id.startswith(_OLD_ENTITY_PREFIX):
+                        prefix = _OLD_ENTITY_PREFIX
+                        old_state_ids.append(state.entity_id)
+                    else:
                         continue
-                    name = state.entity_id[len(_ENTITY_PREFIX):]
+                    name = state.entity_id[len(prefix):]
                     try:
                         videos = state.attributes.get("data", "[]")
                         if isinstance(videos, str):
@@ -66,6 +74,8 @@ class PlaylistStore:
                         _LOGGER.warning("Skipping an invalid legacy playlist state")
                 if playlists:
                     await self._async_save(playlists)
+                for entity_id in old_state_ids:
+                    self.hass.states.async_remove(entity_id)
             self.playlists = playlists
             for name, videos in playlists.items():
                 self._publish(name, videos)
@@ -81,6 +91,13 @@ class PlaylistStore:
                 raise HomeAssistantError("Playlist storage verification failed")
         except (OSError, HomeAssistantError):
             raise HomeAssistantError("Unable to save or verify playlist storage") from None
+
+    async def async_snapshot(self):
+        """Return a consistent read-only snapshot; related: playlist list/play actions."""
+        async with self.lock:
+            if self.closed:
+                raise HomeAssistantError("Playlist storage is unavailable; try again after setup")
+            return deepcopy(self.playlists)
 
     def _publish(self, name, videos):
         self.hass.states.async_set(
@@ -109,6 +126,7 @@ class PlaylistStore:
             await self._async_save(playlists)
             self.playlists = playlists
             self.hass.states.async_remove(f"{_ENTITY_PREFIX}{name}")
+            self.hass.states.async_remove(f"{_OLD_ENTITY_PREFIX}{name}")
 
     async def async_clear_states(self):
         """Drain mutations on unload and prevent stale writes after a reload."""
@@ -116,3 +134,4 @@ class PlaylistStore:
             self.closed = True
             for name in self.playlists:
                 self.hass.states.async_remove(f"{_ENTITY_PREFIX}{name}")
+                self.hass.states.async_remove(f"{_OLD_ENTITY_PREFIX}{name}")

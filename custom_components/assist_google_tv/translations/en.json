@@ -1,0 +1,82 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "YouTube API key",
+        "data": {
+          "api_key": "YouTube API key"
+        }
+      },
+      "tv_control": {
+        "title": "Google TV control method",
+        "description": "Choose the app control method and its connected TV entity.",
+        "data": {
+          "tv_method": "Control method",
+          "tv_entity_id": "TV entity"
+        }
+      },
+      "apps": {
+        "title": "Choose Google TV apps",
+        "description": "Select detected apps. Add apps that are missing as a JSON array of name and launch values.",
+        "data": {
+          "tv_selected_apps": "Detected apps",
+          "tv_custom_apps": "Add apps (JSON)"
+        }
+      },
+      "playback_mode": {
+        "title": "YouTube playback mode",
+        "data": {
+          "playback_mode": "Playback mode",
+          "netflix_search_region": "Netflix search region"
+        }
+      }
+    },
+    "error": {
+      "api_key_required": "Enter an API key.",
+      "invalid_apps": "App list must be a JSON array of name and launch values with unique app names.",
+      "tv_entity_not_found": "Select an available entity that matches the chosen control method."
+    },
+    "abort": {
+      "single_instance_allowed": "Only one configuration is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "YouTube API key",
+        "data": {
+          "api_key": "YouTube API key"
+        },
+        "description": "Leave the field blank to keep the saved key."
+      },
+      "tv_control": {
+        "title": "Google TV control method",
+        "description": "Choose the app control method and its connected TV entity.",
+        "data": {
+          "tv_method": "Control method",
+          "tv_entity_id": "TV entity"
+        }
+      },
+      "apps": {
+        "title": "Choose Google TV apps",
+        "description": "Select detected apps. Add apps that are missing as a JSON array of name and launch values.",
+        "data": {
+          "tv_selected_apps": "Detected apps",
+          "tv_custom_apps": "Add apps (JSON)"
+        }
+      },
+      "playback_mode": {
+        "title": "YouTube playback mode",
+        "data": {
+          "playback_mode": "Playback mode",
+          "netflix_search_region": "Netflix search region"
+        }
+      }
+    },
+    "error": {
+      "api_key_required": "Enter an API key.",
+      "invalid_apps": "App list must be a JSON array of name and launch values with unique app names.",
+      "tv_entity_not_found": "Select an available entity that matches the chosen control method."
+    }
+  }
+}

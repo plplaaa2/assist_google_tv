@@ -3,23 +3,29 @@
 HA service integration with Assist LLM tools. Frontend assets are retained but inactive.
 
 ```text
+.gitignore
 LICENSE
+custom_components/assist_google_tv/THIRD_PARTY_NOTICES.md
 README.md
-changelog.jsonl
-custom_components/youtube_content_search/__init__.py
-custom_components/youtube_content_search/config_flow.py
-custom_components/youtube_content_search/const.py
-custom_components/youtube_content_search/llm.py
-custom_components/youtube_content_search/frontend/panel.html
-custom_components/youtube_content_search/frontend/panel.js
-custom_components/youtube_content_search/frontend/styles.css
-custom_components/youtube_content_search/manifest.json
-custom_components/youtube_content_search/options_flow.py
-custom_components/youtube_content_search/playlist_store.py
-custom_components/youtube_content_search/services.py
-custom_components/youtube_content_search/services.yaml
-custom_components/youtube_content_search/translations/en.json
-custom_components/youtube_content_search/translations/ko.json
+README.ko.md
+CHANGELOG.md
+.github/workflows/validate.yaml
+custom_components/assist_google_tv/__init__.py
+custom_components/assist_google_tv/app_tools.py
+custom_components/assist_google_tv/config_flow.py
+custom_components/assist_google_tv/brand/icon.png
+custom_components/assist_google_tv/const.py
+custom_components/assist_google_tv/llm.py
+custom_components/assist_google_tv/frontend/panel.html
+custom_components/assist_google_tv/frontend/panel.js
+custom_components/assist_google_tv/frontend/styles.css
+custom_components/assist_google_tv/manifest.json
+custom_components/assist_google_tv/options_flow.py
+custom_components/assist_google_tv/playlist_store.py
+custom_components/assist_google_tv/services.py
+custom_components/assist_google_tv/services.yaml
+custom_components/assist_google_tv/translations/en.json
+custom_components/assist_google_tv/translations/ko.json
 hacs.json
 icon.png
 info.md
@@ -28,5 +34,7 @@ tests/test_service_only.py
 tree.md
 validate_syntax.py
 ```
+
+JSONL development documents such as `changelog.jsonl` and `caution.jsonl` are kept locally.
 
 servers/ contains only Git metadata and is outside the integration runtime.
