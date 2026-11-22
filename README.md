@@ -2,6 +2,8 @@
 
 Control Google TV with Home Assistant Assist. Search and play YouTube videos, open Netflix titles and episodes, and manage local YouTube playlists.
 
+YouTube and Netflix are the only streaming services currently supported. Support for other streaming services will be added once subscriptions to those services are available for development and testing.
+
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 ![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg?style=for-the-badge)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-F16061?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/plplaaa2)

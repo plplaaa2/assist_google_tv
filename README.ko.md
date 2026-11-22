@@ -2,6 +2,8 @@
 
 Home Assistant Assist 음성 명령으로 Google TV에서 YouTube 영상을 검색·재생하고 Netflix 작품과 회차를 엽니다. YouTube 재생목록도 Home Assistant 내부에 저장할 수 있습니다.
 
+현재 지원하는 스트리밍 서비스는 유튜브(YouTube)와 넷플릭스(Netflix)뿐입니다. 다른 OTT 서비스는 개발 및 테스트에 필요한 해당 서비스 구독을 확보하면 지원을 추가합니다.
+
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 ![버전](https://img.shields.io/badge/version-v1.0.0-blue.svg?style=for-the-badge)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-F16061?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/plplaaa2)
