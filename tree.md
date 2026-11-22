@@ -3,12 +3,12 @@
 HA service integration with Assist LLM tools. Frontend assets are retained but inactive.
 
 ```text
+.gitignore
 LICENSE
 custom_components/assist_google_tv/THIRD_PARTY_NOTICES.md
 README.md
 README.ko.md
 CHANGELOG.md
-changelog.jsonl
 .github/workflows/validate.yaml
 custom_components/assist_google_tv/__init__.py
 custom_components/assist_google_tv/app_tools.py
@@ -34,5 +34,7 @@ tests/test_service_only.py
 tree.md
 validate_syntax.py
 ```
+
+JSONL development documents such as `changelog.jsonl` and `caution.jsonl` are kept locally.
 
 servers/ contains only Git metadata and is outside the integration runtime.
