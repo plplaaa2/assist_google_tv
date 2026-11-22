@@ -28,6 +28,11 @@ from .const import (
 CONF_TV_SELECTED_APPS = "tv_selected_apps"
 CONF_TV_CUSTOM_APPS = "tv_custom_apps"
 _APP_JSON_DEFAULT = '[{"name":"YouTube","launch":"https://www.youtube.com"}]'
+# Remote app link suggestions; related: app_tools.py and translations/.
+_REMOTE_APP_LINKS = (
+    {"name": "YouTube", "launch": "https://www.youtube.com"},
+    {"name": "Netflix", "launch": "netflix://"},
+)
 _PLAYBACK_OPTIONS = {
     PLAYBACK_MODE_CAST_FALLBACK: "SmartTube → Cast fallback",
     PLAYBACK_MODE_CAST: "Google Cast only",
@@ -215,6 +220,30 @@ def _is_media_app(name: str, launch: str):
     )
 
 
+def _tv_app_candidates(method: str, detected: list[dict], existing: list[dict]):
+    """Offer Remote app links alongside configured apps; related: app_tools.py."""
+    if method != "remote":
+        return _merge_app_lists(detected, existing) or _default_apps()
+
+    candidates = _merge_app_lists(existing, detected)
+    names = {app["name"].casefold() for app in candidates}
+    launches = {app["launch"] for app in candidates}
+    candidates.extend(
+        app for app in _REMOTE_APP_LINKS
+        if app["name"].casefold() not in names and app["launch"] not in launches
+    )
+    return candidates
+
+
+def _default_selected_apps(candidates: list[dict], settings: dict):
+    """Preserve saved choices and leave new Remote choices unchecked; related: translations/."""
+    if CONF_TV_APPS in settings:
+        return [app["launch"] for app in _apps_from_settings(settings)]
+    if settings.get(CONF_TV_METHOD) == "remote":
+        return []
+    return [app["launch"] for app in candidates]
+
+
 def _detected_tv_apps(hass, method: str, entity_id: str):
     """Read candidate apps from Remote options or ADB source_list; they may be incomplete."""
     apps = []
@@ -335,7 +364,7 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         await _adb_tv_launchers(self.hass, entity_id), detected
                     )
                 existing = _apps_from_settings(defaults) if CONF_TV_APPS in defaults else []
-                self._app_candidates = _merge_app_lists(detected, existing) or _default_apps()
+                self._app_candidates = _tv_app_candidates(method, detected, existing)
                 return await self.async_step_apps()
         return self.async_show_form(
             step_id="tv_control", data_schema=_tv_control_schema(defaults), errors=errors
@@ -344,12 +373,7 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_apps(self, user_input=None):
         candidates = getattr(self, "_app_candidates", _default_apps())
         defaults = getattr(self, "_flow_data", {})
-        existing_apps = _apps_from_settings(defaults) if CONF_TV_APPS in defaults else []
-        default_selected = (
-            [app["launch"] for app in existing_apps]
-            if CONF_TV_APPS in defaults
-            else [app["launch"] for app in candidates]
-        )
+        default_selected = _default_selected_apps(candidates, defaults)
         errors = {}
         if user_input is not None:
             apps = _selected_apps(
@@ -440,7 +464,7 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
                     if CONF_TV_APPS in self._flow_data
                     else []
                 )
-                self._app_candidates = _merge_app_lists(detected, existing) or _default_apps()
+                self._app_candidates = _tv_app_candidates(method, detected, existing)
                 return await self.async_step_apps()
         return self.async_show_form(
             step_id="tv_control",
@@ -450,16 +474,7 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_apps(self, user_input=None):
         candidates = getattr(self, "_app_candidates", _default_apps())
-        existing_apps = (
-            _apps_from_settings(self._flow_data)
-            if CONF_TV_APPS in self._flow_data
-            else []
-        )
-        default_selected = (
-            [app["launch"] for app in existing_apps]
-            if CONF_TV_APPS in self._flow_data
-            else [app["launch"] for app in candidates]
-        )
+        default_selected = _default_selected_apps(candidates, self._flow_data)
         errors = {}
         if user_input is not None:
             apps = _selected_apps(

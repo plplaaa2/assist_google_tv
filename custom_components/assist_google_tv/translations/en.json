@@ -17,9 +17,9 @@
       },
       "apps": {
         "title": "Choose Google TV apps",
-        "description": "Select detected apps. Add apps that are missing as a JSON array of name and launch values.",
+        "description": "Select the apps you use on this TV. Android TV Remote suggests YouTube and Netflix even when their installation status is unknown. Add missing apps as a JSON array of name and launch values.",
         "data": {
-          "tv_selected_apps": "Detected apps",
+          "tv_selected_apps": "Apps to use",
           "tv_custom_apps": "Add apps (JSON)"
         }
       },
@@ -59,9 +59,9 @@
       },
       "apps": {
         "title": "Choose Google TV apps",
-        "description": "Select detected apps. Add apps that are missing as a JSON array of name and launch values.",
+        "description": "Select the apps you use on this TV. Android TV Remote suggests YouTube and Netflix even when their installation status is unknown. Add missing apps as a JSON array of name and launch values.",
         "data": {
-          "tv_selected_apps": "Detected apps",
+          "tv_selected_apps": "Apps to use",
           "tv_custom_apps": "Add apps (JSON)"
         }
       },

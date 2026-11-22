@@ -28,7 +28,7 @@ Home Assistant에서 Google Cast 및/또는 Android TV Remote를 먼저 설정�
 
 1. YouTube Data API v3 키를 입력합니다. 입력값은 비밀번호 형식으로 가려집니다.
 2. 앱을 실행할 Google TV 제어 방식(Android TV Remote 또는 ADB)과 TV 엔티티를 선택합니다.
-3. 감지된 앱 체크박스에서 사용할 앱을 고릅니다. 감지가 비어 있거나 앱이 빠졌다면 `[{"name":"YouTube","launch":"https://www.youtube.com"}]` 형태의 JSON 배열로 추가할 수 있습니다. Remote는 옵션에 등록된 앱을, ADB는 TV에서 조회한 앱과 `source_list` 후보를 보여줍니다.
+3. TV에서 사용하는 앱을 선택합니다. Android TV Remote는 설치 여부를 확인할 수 없어도 YouTube와 Netflix를 앱 링크 후보로 표시하며, Remote 옵션에 등록된 앱도 함께 표시합니다. ADB는 TV에서 조회한 앱과 `source_list` 후보를 보여줍니다. 목록에 없는 앱은 `[{"name":"YouTube","launch":"https://www.youtube.com"}]` 형태의 JSON 배열로 추가할 수 있습니다.
 4. YouTube 재생 방식을 선택합니다.
 
 - **SmartTube → Cast fallback** (기본값)
@@ -121,7 +121,7 @@ data:
 ## Assist 음성 명령
 
 1. 사용할 Android TV Remote 및/또는 Google Cast 엔티티를 Assist에 노출합니다.
-2. 통합 옵션의 순서형 설정을 진행해 Remote 또는 ADB 방식과 TV 엔티티를 고른 다음 앱 체크박스를 확인합니다. 감지되지 않은 앱만 `{"name":"YouTube","launch":"https://www.youtube.com"}` 형식의 JSON으로 추가하세요. Remote의 `launch`는 activity/deep link, ADB의 `launch`는 앱 패키지 ID를 사용합니다.
+2. 통합 옵션에서 Remote 또는 ADB 방식과 TV 엔티티를 고른 다음 사용하는 앱을 선택합니다. 목록에 없는 앱은 `[{"name":"YouTube","launch":"https://www.youtube.com"}]` 형태의 JSON 배열로 추가할 수 있습니다. Remote의 `launch`는 activity 또는 딥 링크를 사용하며, ADB는 앱 패키지 ID를 사용합니다.
 3. 도구 호출을 지원하는 대화 에이전트 설정에서 **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)**, **Assist Google TV (App Launch)** 중 필요한 공급자를 선택합니다. 각각 독립적으로 선택할 수 있습니다.
 4. 음성 어시스턴트에 YouTube 영상 재생, Netflix 작품 열기, 설정된 앱 실행, 또는 Google TV 홈 화면 이동을 요청합니다.
 

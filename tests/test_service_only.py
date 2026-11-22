@@ -956,36 +956,57 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.states["remote.tv"] = SimpleNamespace(
             entity_id="remote.tv", state="on", attributes={"friendly_name": "Living room TV"},
         )
-        result = await flow.async_step_tv_control({"tv_method": "remote", "tv_entity_id": "remote.tv"})
+        tv_input = {"tv_method": "remote", "tv_entity_id": "remote.tv"}
+        # Remote app links are available without ADB; related: config_flow.py.
+        with patch.object(self.hass.services, "has_service", return_value=False):
+            result = await flow.async_step_tv_control(tv_input)
         self.assertEqual(result["step_id"], "apps")
         self.assertIn("tv_selected_apps", result["data_schema"].schema)
         selected_key = next(
             key for key in result["data_schema"].schema
             if getattr(key, "schema", key) == "tv_selected_apps"
         )
-        self.assertTrue(result["data_schema"].schema[selected_key].config["multiple"])
+        app_selector = result["data_schema"].schema[selected_key]
+        self.assertTrue(app_selector.config["multiple"])
+        self.assertEqual(app_selector.config["options"], [
+            {"label": "YouTube", "value": "https://www.youtube.com"},
+            {"label": "Netflix", "value": "netflix://"},
+        ])
+        self.assertEqual(selected_key.default(), [])
         result = await flow.async_step_apps({
-            "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
+            "tv_selected_apps": ["netflix://"], "tv_custom_apps": "[]",
         })
         self.assertEqual(result["step_id"], "playback_mode")
         result = await flow.async_step_playback_mode({"playback_mode": "cast_fallback", "netflix_search_region": "kr"})
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["playback_mode"], "cast_fallback")
         self.assertEqual(result["data"]["netflix_search_region"], "kr")
-        self.assertEqual(json.loads(result["data"]["tv_apps"])[0]["name"], "YouTube")
+        self.assertEqual(json.loads(result["data"]["tv_apps"]), [
+            {"name": "Netflix", "launch": "netflix://"},
+        ])
+        saved_apps = [{"name": "YouTube", "launch": "vnd.youtube://"}]
+        self.entry.options["tv_apps"] = json.dumps(saved_apps)
         options = flow.async_get_options_flow(self.entry)
         result = await options.async_step_init({"api_key": " "})
         self.assertEqual(result["step_id"], "tv_control")
         options.hass = self.hass
-        result = await options.async_step_tv_control({"tv_method": "remote", "tv_entity_id": "remote.tv"})
+        with patch.object(self.hass.services, "has_service", return_value=False):
+            result = await options.async_step_tv_control(tv_input)
         self.assertEqual(result["step_id"], "apps")
+        selected_key = next(key for key in result["data_schema"].schema if key == "tv_selected_apps")
+        self.assertEqual(selected_key.default(), ["vnd.youtube://"])
+        self.assertEqual(result["data_schema"].schema[selected_key].config["options"], [
+            {"label": "YouTube", "value": "vnd.youtube://"},
+            {"label": "Netflix", "value": "netflix://"},
+        ])
         result = await options.async_step_apps({
-            "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
+            "tv_selected_apps": ["vnd.youtube://"], "tv_custom_apps": "[]",
         })
         self.assertEqual(result["step_id"], "playback_mode")
         result = await options.async_step_playback_mode({"playback_mode": "cast_fallback", "netflix_search_region": "us"})
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["netflix_search_region"], "us")
+        self.assertEqual(json.loads(result["data"]["tv_apps"]), saved_apps)
         flow._async_current_entries = lambda: [self.entry]
         self.assertEqual((await flow.async_step_user())["reason"], "single_instance_allowed")
 

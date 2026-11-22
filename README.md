@@ -28,7 +28,7 @@ Set up Google Cast and/or Android TV Remote in Home Assistant, then follow the i
 
 1. Enter the YouTube Data API v3 key. The field is masked as a password.
 2. Choose Android TV Remote or ADB and select the TV entity.
-3. Check the detected apps to allow. If discovery misses an app, add it as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`. Remote candidates come from its configured app options; ADB candidates come from launcher discovery and `source_list`.
+3. Select the apps you use. With Android TV Remote, YouTube and Netflix are suggested via app links even when their installation status is unknown. The list also includes apps configured in Android TV Remote. ADB candidates come from launcher discovery and `source_list`. Add missing apps as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`.
 4. Choose the YouTube playback mode.
 
 - **SmartTube → Cast fallback** (default)
@@ -123,7 +123,7 @@ In app-link modes, the first video opens through Android TV Remote and the remai
 ## Use with Assist
 
 1. Expose the target Android TV Remote and/or Google Cast entities to Assist.
-2. In integration options, follow the ordered setup to choose Remote or ADB and the TV entity, then review the detected app checkboxes. Add only missing apps as JSON such as `{"name":"YouTube","launch":"https://www.youtube.com"}`. Remote uses an activity/deep link; ADB uses the app package ID.
+2. In integration options, choose Remote or ADB and the TV entity, then check the apps you use. Add missing apps as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`. Remote uses an activity or deep link. ADB uses the app package ID.
 3. In a compatible conversation agent's **Tool providers** or **LLM API** settings, select **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)**, **Assist Google TV (App Launch)**, or any combination.
 4. Ask the voice assistant to play a YouTube video, open a Netflix title, launch a configured app, or return to the Google TV home screen.
 
