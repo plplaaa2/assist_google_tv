@@ -5,10 +5,19 @@ Control Google TV with Home Assistant Assist. Search and play YouTube videos, op
 YouTube and Netflix are the only streaming services currently supported. Support for other streaming services will be added once subscriptions to those services are available for development and testing.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg?style=for-the-badge)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-F16061?style=for-the-badge&logo=ko-fi)](https://ko-fi.com/plplaaa2)
 
 [한국어 안내](README.ko.md)
+
+## What's new in 1.1.0
+
+- **ADB only.** Switch between HDMI, AV, and the TV tuner, choose an input for live TV, and use separate commands for standby and full shutdown. [TV input and power setup](#tv-input-and-power-with-adb)
+- Play YouTube playlist URLs and cast directly in any playback mode. [YouTube playback](#search-and-play-youtube)
+- Choose a Netflix search region and play the latest listed episode or a specific episode. [Netflix playback](#open-netflix-titles)
+- Launch configured apps and return to the TV home screen from Assist. [Assist setup](#use-with-assist)
+
+[Full release notes](CHANGELOG.md)
 
 ## Install
 
@@ -24,11 +33,11 @@ Copy `custom_components/assist_google_tv` to `/config/custom_components/assist_g
 
 ## Configure
 
-Set up Google Cast and/or Android TV Remote in Home Assistant, then follow the integration setup steps:
+Set up Google Cast, Android TV Remote, or Android Debug Bridge (ADB) in Home Assistant according to the features you use, then follow the integration setup steps:
 
 1. Enter the YouTube Data API v3 key. The field is masked as a password.
 2. Choose Android TV Remote or ADB and select the TV entity.
-3. Check the detected apps to allow. If discovery misses an app, add it as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`. Remote candidates come from its configured app options; ADB candidates come from launcher discovery and `source_list`.
+3. Select the apps you use. With Android TV Remote, YouTube and Netflix are suggested via app links even when their installation status is unknown. The list also includes apps configured in Android TV Remote. ADB candidates come from launcher discovery and `source_list`. Add missing apps as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`.
 4. Choose the YouTube playback mode.
 
 - **SmartTube → Cast fallback** (default)
@@ -63,11 +72,13 @@ data:
   cast_entity_id: media_player.living_room_tv
 ```
 
-Use a `media_player` as `entity_id` in Cast-only mode. `cast_entity_id` is only needed for app-link fallback.
+You can use a Google Cast `media_player` as `entity_id` for direct Cast playback in any playback mode. `cast_entity_id` is only needed for app-link fallback.
 
 ### Open Netflix titles
 
 Before YouTube or Netflix playback, and before launching a configured app, a foreground screensaver is dismissed when the configured TV reports one. Provide a Netflix title and Android TV Remote entity. Add both `season` and `episode` to select an episode within a season. If you provide only `episode`, it is treated as Netflix's cumulative episode number across the series. Without an episode, movies play directly and series open their title page.
+
+Set `latest: true` to play the latest listed episode of a series.
 
 ```yaml
 action: assist_google_tv.netflix_play
@@ -122,14 +133,29 @@ In app-link modes, the first video opens through Android TV Remote and the remai
 
 ## Use with Assist
 
-1. Expose the target Android TV Remote and/or Google Cast entities to Assist.
-2. In integration options, follow the ordered setup to choose Remote or ADB and the TV entity, then review the detected app checkboxes. Add only missing apps as JSON such as `{"name":"YouTube","launch":"https://www.youtube.com"}`. Remote uses an activity/deep link; ADB uses the app package ID.
+1. Expose the target Android TV Remote, Android Debug Bridge, or Google Cast entity to Assist.
+2. In integration options, choose Remote or ADB and the TV entity, then check the apps you use. Add missing apps as a JSON array such as `[{"name":"YouTube","launch":"https://www.youtube.com"}]`. Remote uses an activity or deep link. ADB uses the app package ID.
 3. In a compatible conversation agent's **Tool providers** or **LLM API** settings, select **Assist Google TV (YouTube)**, **Assist Google TV (Netflix)**, **Assist Google TV (App Launch)**, or any combination.
 4. Ask the voice assistant to play a YouTube video, open a Netflix title, launch a configured app, or return to the Google TV home screen.
 
 The YouTube provider offers `assist_google_tv__youtube_search_play`. The separate Netflix provider offers `assist_google_tv__netflix_play` and works without a YouTube API key. The app provider offers `assist_google_tv__open_app` and `assist_google_tv__go_home`; ADB mode also provides `assist_google_tv__stop_app`. Home navigation sends the `HOME` key through Android TV Remote or Android TV ADB. Playlist actions are available in Home Assistant, not as Assist tools.
 
 A successful response confirms that Home Assistant sent the playback request; it does not confirm that video or audio started.
+
+### TV input and power with ADB
+
+**TV input switching, standby, and full shutdown are available only with Android Debug Bridge (ADB).**
+
+Select **Android TV ADB** and enable **Assist Google TV (App Launch)** in the conversation agent. The setup and options screens show the inputs the TV reports. Choose **Input for live TV (ADB)** for the TV tuner or your set-top box. The TV must be reachable by ADB during discovery.
+
+| Say | Action |
+| --- | --- |
+| “Switch the TV to HDMI 2” | Select HDMI 2 and verify that the TV reports it as active. |
+| “Watch live TV” | Select the configured broadcast input. The built-in tuner is the default when available. |
+| “Turn off the TV” | Put the TV in standby. |
+| “Shut down the TV completely” | Request an Android system shutdown. ADB disconnects once the TV powers off. |
+
+Input switching uses the TV's input menu. The requested tuner, AV, or HDMI entry must be visible and selectable in that menu.
 
 ## Development
 

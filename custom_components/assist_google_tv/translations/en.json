@@ -17,17 +17,21 @@
       },
       "apps": {
         "title": "Choose Google TV apps",
-        "description": "Select detected apps. Add apps that are missing as a JSON array of name and launch values.",
+        "description": "Select the apps you use on this TV. Android TV Remote suggests YouTube and Netflix even when their installation status is unknown. Add missing apps as a JSON array of name and launch values.",
         "data": {
-          "tv_selected_apps": "Detected apps",
+          "tv_selected_apps": "Apps to use",
           "tv_custom_apps": "Add apps (JSON)"
         }
       },
       "playback_mode": {
-        "title": "YouTube playback mode",
+        "title": "Playback and TV input",
         "data": {
           "playback_mode": "Playback mode",
-          "netflix_search_region": "Netflix search region"
+          "netflix_search_region": "Netflix search region",
+          "live_tv_input": "Input for live TV (ADB)"
+        },
+        "data_description": {
+          "live_tv_input": "Choose the TV tuner or the HDMI input used by your set-top box."
         }
       }
     },
@@ -59,17 +63,21 @@
       },
       "apps": {
         "title": "Choose Google TV apps",
-        "description": "Select detected apps. Add apps that are missing as a JSON array of name and launch values.",
+        "description": "Select the apps you use on this TV. Android TV Remote suggests YouTube and Netflix even when their installation status is unknown. Add missing apps as a JSON array of name and launch values.",
         "data": {
-          "tv_selected_apps": "Detected apps",
+          "tv_selected_apps": "Apps to use",
           "tv_custom_apps": "Add apps (JSON)"
         }
       },
       "playback_mode": {
-        "title": "YouTube playback mode",
+        "title": "Playback and TV input",
         "data": {
           "playback_mode": "Playback mode",
-          "netflix_search_region": "Netflix search region"
+          "netflix_search_region": "Netflix search region",
+          "live_tv_input": "Input for live TV (ADB)"
+        },
+        "data_description": {
+          "live_tv_input": "Choose the TV tuner or the HDMI input used by your set-top box."
         }
       }
     },
