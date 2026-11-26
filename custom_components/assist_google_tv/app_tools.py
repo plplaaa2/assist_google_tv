@@ -243,14 +243,8 @@ class GoogleTVAppsAPI(llm.API):
                 tools.insert(0, GoogleTVAppTool(self._entry))
             if method == "adb" and apps:
                 tools.append(GoogleTVStopAppTool(self._entry))
-            prompt = (
-                "Use the home tool to return to the TV home screen. "
-                "Use the stop tool only when available; "
-                "never turn off the TV to close an app. App tools do not search for or play specific content. "
-                "Use exact configured app names. A successful response confirms only that a request was sent. "
-                + ("Configured apps: " + json.dumps(
-                    [{"name": app["name"], "launch": app["launch"]} for app in apps],
-                    ensure_ascii=False,
-                ) if apps else "No apps are configured.")
-            )
+            # Tool descriptions and app enums carry routing rules; related: tests/test_service_only.py.
+            prompt = "A successful response confirms only that a request was sent."
+            if method == "adb":
+                prompt += " Never turn off the TV to close an app."
         return llm.APIInstance(api=self, api_prompt=prompt, llm_context=llm_context, tools=tools)
