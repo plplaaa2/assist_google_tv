@@ -1,0 +1,48 @@
+name: 새 기능 제안 / Feature request
+description: Assist Google TV에 원하는 기능을 제안합니다. / Suggest a feature for Assist Google TV.
+title: "[Feature] "
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: 관련 기능 / Feature area
+      options:
+        - 기본 동작·설정 / Setup and core behavior
+        - Assist 명령 / Assist commands
+        - 앱 제어 / App control
+        - TV 입력·전원 제어 / TV input and power control
+        - YouTube
+        - Netflix
+        - 재생목록 / Playlists
+        - 새 앱·서비스 지원 / New app or service support
+        - 기타 / Other
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 어떤 상황에서 필요한가요? / When would you use it?
+      description: 하려는 작업과 지금 겪는 불편을 알려 주세요. / Describe what you are trying to do and what makes it difficult today.
+    validations:
+      required: true
+  - type: textarea
+    id: desired-behavior
+    attributes:
+      label: 어떻게 동작하면 좋을까요? / How should it work?
+      description: 원하는 실행 방법과 결과를 알려 주세요. / Describe how you would trigger it and what should happen.
+    validations:
+      required: true
+  - type: dropdown
+    id: entry-point
+    attributes:
+      label: 어디서 사용하고 싶나요? / Where would you use it?
+      multiple: true
+      options:
+        - Assist 음성·텍스트 / Assist voice or text
+        - Home Assistant 액션·자동화 / Home Assistant action or automation
+        - 통합 설정 화면 / Integration settings
+  - type: textarea
+    id: references
+    attributes:
+      label: 관련 기기·앱 또는 참고 자료 / Related devices, apps, or references
+      description: TV 모델, 앱 이름, 유사 기능 링크, 우회 방법 또는 관련 버전을 적어 주세요. / Include device or app details, links, workarounds, or relevant versions.

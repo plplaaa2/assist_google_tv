@@ -1,0 +1,88 @@
+name: 버그 제보 / Bug report
+description: Assist Google TV의 오류를 제보합니다. / Report a problem with Assist Google TV.
+title: "[Bug] "
+body:
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant Core 버전 / Home Assistant Core version
+    validations:
+      required: true
+  - type: input
+    id: integration-version
+    attributes:
+      label: Assist Google TV 구성요소 버전 / Assist Google TV integration version
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: 버그 종류 / Bug category
+      options:
+        - 기본 동작·설정 / Setup and core behavior
+        - Assist 명령 처리 / Assist command handling
+        - 앱 제어 / App control
+        - TV 입력·전원 제어 / TV input and power control
+        - YouTube 검색·재생 / YouTube search and playback
+        - Netflix 검색·재생 / Netflix search and playback
+        - 재생목록 / Playlists
+        - 기타·잘 모르겠음 / Other or unsure
+    validations:
+      required: true
+  - type: dropdown
+    id: entry-point
+    attributes:
+      label: 실행 경로 / How did you trigger it?
+      options:
+        - Assist 음성·텍스트 / Assist voice or text
+        - Home Assistant 액션·자동화 / Home Assistant action or automation
+        - 통합 설정 화면 / Integration settings
+        - 기타·잘 모르겠음 / Other or unsure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 단계 / Steps to reproduce
+      description: 사용한 명령이나 액션과 실행 순서를 적어 주세요. / Include the command or action and the steps you followed.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 결과 / Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 결과 / Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: tv-model
+    attributes:
+      label: TV 제조사·모델 / TV brand and model
+  - type: dropdown
+    id: connection
+    attributes:
+      label: TV 연결 방식 / TV connection
+      multiple: true
+      options:
+        - Google Cast
+        - Android TV Remote
+        - Android TV ADB
+        - 기타·잘 모르겠음 / Other or unsure
+  - type: input
+    id: playback-mode
+    attributes:
+      label: YouTube 재생 모드 / YouTube playback mode
+  - type: input
+    id: last-working-version
+    attributes:
+      label: 마지막 정상 동작 버전 / Last working version
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 관련 로그·스크린샷 / Relevant logs and screenshots
+      description: 첨부 전 API 키, 비밀번호, 토큰을 가려 주세요. / Redact API keys, passwords, and tokens before attaching anything.

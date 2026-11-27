@@ -9,6 +9,9 @@ README.md
 README.ko.md
 CHANGELOG.md
 changelog.jsonl
+.github/ISSUE_TEMPLATE/01-bug.yml
+.github/ISSUE_TEMPLATE/02-feature.yml
+.github/ISSUE_TEMPLATE/config.yml
 .github/workflows/validate.yaml
 custom_components/assist_google_tv/__init__.py
 custom_components/assist_google_tv/app_tools.py
