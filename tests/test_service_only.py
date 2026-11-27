@@ -382,6 +382,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         instance = await GoogleTVAppsAPI(self.hass, self.entry).async_get_api_instance(context)
         self.assertEqual([tool.name for tool in instance.tools], [
             "assist_google_tv__open_app", "assist_google_tv__go_home", "assist_google_tv__stop_app",
+            "assist_google_tv__select_input", "assist_google_tv__turn_off_tv", "assist_google_tv__shutdown_tv",
         ])
         home_result = await instance.tools[1].async_call(
             self.hass, SimpleNamespace(tool_args={}), context,
@@ -401,6 +402,100 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             {"entity_id": "media_player.tv", "source": "!com.netflix.ninja"},
             blocking=True, context=context.context,
         )
+
+    # Verify input discovery, confirmed selection, and distinct power commands; related: adb_tv.py and app_tools.py.
+    @staticmethod
+    def _adb_input_dump(active="hdmi/1"):
+        return (
+            "  sessionStateMap: ITvInputSession -> SessionState\n"
+            "    preview: com.android.server.tv.TvInputManagerService$SessionState@1\n"
+            "      inputId: preview/source\n"
+            "    main: com.android.server.tv.TvInputManagerService$SessionState@2\n"
+            f"      inputId: {active}\n"
+            "  mainSessionToken: main\n"
+            "  TvInputHardwareInfo {id=0, type=2}\n"
+            "  TvInputHardwareInfo {id=1, type=3}\n"
+            "  TvInputHardwareInfo {id=4, type=9, hdmi_port=1}\n"
+            "  TvInputHardwareInfo {id=5, type=9, hdmi_port=2}\n"
+            "  TvInputHardwareInfo {id=14, type=9, hdmi_port=2}\n"
+            "  mHardwareInputIdMap: deviceId -> inputId\n"
+            "    0: tuner/0\n"
+            "    1: composite/1\n"
+            "    4: hdmi/1\n"
+            "    5: hdmi/2\n"
+            "  mHdmiInputIdMap: id -> inputId\n"
+        )
+
+    @staticmethod
+    def _adb_input_menu(focus):
+        return "<hierarchy><node>" + "".join(
+            f'<node focusable="true" enabled="true" focused="{str(label == focus).lower()}" '
+            f'bounds="[0,{index * 10}][10,{index * 10 + 10}]"><node text="{label}" /></node>'
+            for index, label in enumerate(("TV", "AV", "HDMI 1", "HDMI 2"))
+        ) + "</node></hierarchy>"
+
+    async def test_adb_input_does_not_select_until_the_requested_row_is_focused(self):
+        from custom_components.assist_google_tv import adb_tv
+        from custom_components.assist_google_tv.app_tools import GoogleTVAppsAPI
+
+        context = self._llm_context()
+        self.entry.options.update({"tv_method": "adb", "tv_entity_id": "media_player.tv", "live_tv_input": "HDMI 2"})
+        api = await GoogleTVAppsAPI(self.hass, self.entry).async_get_api_instance(context)
+        tool = next(tool for tool in api.tools if tool.name == "assist_google_tv__select_input")
+        responses = [
+            self._adb_input_dump(), "ok", self._adb_input_menu("HDMI 1"),
+            "ok", self._adb_input_menu("HDMI 2"), "ok", self._adb_input_dump("hdmi/2"),
+        ]
+        self.hass.services.async_call.side_effect = [{"adb_response": output} for output in responses]
+        result = await tool.async_call(self.hass, SimpleNamespace(tool_args={"input": "live_tv"}), context)
+        self.assertEqual(result.data["input"], "HDMI 2")
+        commands = [invocation.args[2]["command"] for invocation in self.hass.services.async_call.await_args_list]
+        self.assertEqual(commands.count(adb_tv.READ_INPUT_MENU), 2)
+        self.assertIn("KEYCODE_DPAD_DOWN", commands[3])
+        self.assertIn("KEYCODE_DPAD_CENTER", commands[5])
+
+        self.hass.services.async_call.reset_mock()
+        responses[4] = self._adb_input_menu("AV")
+        self.hass.services.async_call.side_effect = [{"adb_response": output} for output in responses]
+        with self.assertRaises(HAError):
+            await tool.async_call(self.hass, SimpleNamespace(tool_args={"input": "HDMI 2"}), context)
+        self.assertFalse(any("DPAD_CENTER" in invocation.args[2]["command"]
+                             for invocation in self.hass.services.async_call.await_args_list))
+
+    async def test_adb_standby_and_full_shutdown_send_distinct_commands(self):
+        from custom_components.assist_google_tv.adb_tv import SHUTDOWN_COMMAND
+        from custom_components.assist_google_tv.app_tools import GoogleTVAppsAPI
+
+        context = self._llm_context()
+        self.entry.options.update({"tv_method": "adb", "tv_entity_id": "media_player.tv", "tv_apps": "[]"})
+        api = await GoogleTVAppsAPI(self.hass, self.entry).async_get_api_instance(context)
+        tools = {tool.name: tool for tool in api.tools}
+        self.hass.services.async_call.side_effect = [{"adb_response": "ok"}, {"adb_response": "shutdown_scheduled"}]
+        standby = await tools["assist_google_tv__turn_off_tv"].async_call(
+            self.hass, SimpleNamespace(tool_args={}), context,
+        )
+        shutdown = await tools["assist_google_tv__shutdown_tv"].async_call(
+            self.hass, SimpleNamespace(tool_args={}), context,
+        )
+        self.assertEqual(standby.data["status"], "standby_requested")
+        self.assertEqual(shutdown.data["status"], "shutdown_requested")
+        commands = [invocation.args[2]["command"] for invocation in self.hass.services.async_call.await_args_list]
+        self.assertEqual(commands, ["input keyevent KEYCODE_SLEEP && printf 'ok\\n'", SHUTDOWN_COMMAND])
+
+    async def test_adb_options_discover_and_save_the_broadcast_input(self):
+        context = self._llm_context()
+        options = flows.YouTubeOptionsFlowHandler(self.entry)
+        options.hass = self.hass
+        self.hass.services.async_call.return_value = {"media_player.tv": {"adb_response": self._adb_input_dump()}}
+        await options.async_step_tv_control({"tv_method": "adb", "tv_entity_id": "media_player.tv"})
+        form = await options.async_step_apps({"tv_selected_apps": [], "tv_custom_apps": "[]"})
+        selected_key = next(key for key in form["data_schema"].schema if key == "live_tv_input")
+        self.assertEqual(selected_key.default(), "TV")
+        self.assertEqual(form["data_schema"].schema[selected_key].config["options"], ["TV", "AV", "HDMI 1", "HDMI 2"])
+        result = await options.async_step_playback_mode({
+            "playback_mode": "cast_fallback", "netflix_search_region": "kr", "live_tv_input": "HDMI 2",
+        })
+        self.assertEqual(result["data"]["live_tv_input"], "HDMI 2")
 
     async def test_netflix_assist_provider_is_separate_and_needs_no_youtube_key(self):
         context = self._llm_context()
@@ -956,36 +1051,57 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.states["remote.tv"] = SimpleNamespace(
             entity_id="remote.tv", state="on", attributes={"friendly_name": "Living room TV"},
         )
-        result = await flow.async_step_tv_control({"tv_method": "remote", "tv_entity_id": "remote.tv"})
+        tv_input = {"tv_method": "remote", "tv_entity_id": "remote.tv"}
+        # Remote app links are available without ADB; related: config_flow.py.
+        with patch.object(self.hass.services, "has_service", return_value=False):
+            result = await flow.async_step_tv_control(tv_input)
         self.assertEqual(result["step_id"], "apps")
         self.assertIn("tv_selected_apps", result["data_schema"].schema)
         selected_key = next(
             key for key in result["data_schema"].schema
             if getattr(key, "schema", key) == "tv_selected_apps"
         )
-        self.assertTrue(result["data_schema"].schema[selected_key].config["multiple"])
+        app_selector = result["data_schema"].schema[selected_key]
+        self.assertTrue(app_selector.config["multiple"])
+        self.assertEqual(app_selector.config["options"], [
+            {"label": "YouTube", "value": "https://www.youtube.com"},
+            {"label": "Netflix", "value": "netflix://"},
+        ])
+        self.assertEqual(selected_key.default(), [])
         result = await flow.async_step_apps({
-            "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
+            "tv_selected_apps": ["netflix://"], "tv_custom_apps": "[]",
         })
         self.assertEqual(result["step_id"], "playback_mode")
         result = await flow.async_step_playback_mode({"playback_mode": "cast_fallback", "netflix_search_region": "kr"})
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["playback_mode"], "cast_fallback")
         self.assertEqual(result["data"]["netflix_search_region"], "kr")
-        self.assertEqual(json.loads(result["data"]["tv_apps"])[0]["name"], "YouTube")
+        self.assertEqual(json.loads(result["data"]["tv_apps"]), [
+            {"name": "Netflix", "launch": "netflix://"},
+        ])
+        saved_apps = [{"name": "YouTube", "launch": "vnd.youtube://"}]
+        self.entry.options["tv_apps"] = json.dumps(saved_apps)
         options = flow.async_get_options_flow(self.entry)
         result = await options.async_step_init({"api_key": " "})
         self.assertEqual(result["step_id"], "tv_control")
         options.hass = self.hass
-        result = await options.async_step_tv_control({"tv_method": "remote", "tv_entity_id": "remote.tv"})
+        with patch.object(self.hass.services, "has_service", return_value=False):
+            result = await options.async_step_tv_control(tv_input)
         self.assertEqual(result["step_id"], "apps")
+        selected_key = next(key for key in result["data_schema"].schema if key == "tv_selected_apps")
+        self.assertEqual(selected_key.default(), ["vnd.youtube://"])
+        self.assertEqual(result["data_schema"].schema[selected_key].config["options"], [
+            {"label": "YouTube", "value": "vnd.youtube://"},
+            {"label": "Netflix", "value": "netflix://"},
+        ])
         result = await options.async_step_apps({
-            "tv_selected_apps": ["https://www.youtube.com"], "tv_custom_apps": "[]",
+            "tv_selected_apps": ["vnd.youtube://"], "tv_custom_apps": "[]",
         })
         self.assertEqual(result["step_id"], "playback_mode")
         result = await options.async_step_playback_mode({"playback_mode": "cast_fallback", "netflix_search_region": "us"})
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["netflix_search_region"], "us")
+        self.assertEqual(json.loads(result["data"]["tv_apps"]), saved_apps)
         flow._async_current_entries = lambda: [self.entry]
         self.assertEqual((await flow.async_step_user())["reason"], "single_instance_allowed")
 

@@ -8,8 +8,10 @@ from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er, selector
 from homeassistant.helpers.selector import SelectSelectorMode
 
+from .adb_tv import TV_INPUT_DUMP, async_adb_output, tv_inputs
 from .const import (
     CONF_API_KEY,
+    CONF_LIVE_TV_INPUT,
     CONF_NETFLIX_SEARCH_REGION,
     CONF_PLAYBACK_MODE,
     CONF_TV_APPS,
@@ -28,6 +30,11 @@ from .const import (
 CONF_TV_SELECTED_APPS = "tv_selected_apps"
 CONF_TV_CUSTOM_APPS = "tv_custom_apps"
 _APP_JSON_DEFAULT = '[{"name":"YouTube","launch":"https://www.youtube.com"}]'
+# Remote app link suggestions; related: app_tools.py and translations/.
+_REMOTE_APP_LINKS = (
+    {"name": "YouTube", "launch": "https://www.youtube.com"},
+    {"name": "Netflix", "launch": "netflix://"},
+)
 _PLAYBACK_OPTIONS = {
     PLAYBACK_MODE_CAST_FALLBACK: "SmartTube → Cast fallback",
     PLAYBACK_MODE_CAST: "Google Cast only",
@@ -121,7 +128,26 @@ def _app_schema(candidates: list[dict], selected: list[str], custom_apps: str = 
     )
 
 
-def _playback_schema(default: str, netflix_region: str):
+# Offer broadcast inputs discovered through ADB; related: adb_tv.py and translations/.
+async def _adb_input_choices(hass, entity_id: str) -> list[str]:
+    try:
+        return list(tv_inputs(await async_adb_output(hass, entity_id, TV_INPUT_DUMP)))
+    except Exception:
+        return []
+
+
+def _live_input_field(choices: list[str], current: str):
+    if not choices:
+        return {}
+    default = current if current in choices else "TV" if "TV" in choices else vol.UNDEFINED
+    return {
+        vol.Optional(CONF_LIVE_TV_INPUT, default=default): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=choices, mode=SelectSelectorMode.DROPDOWN),
+        )
+    }
+
+
+def _playback_schema(default: str, netflix_region: str, choices: list[str], live_input: str):
     return vol.Schema(
         {
             vol.Required(CONF_PLAYBACK_MODE, default=default): selector.SelectSelector(
@@ -135,7 +161,8 @@ def _playback_schema(default: str, netflix_region: str):
                     options=[{"value": key, "label": label} for key, label in _NETFLIX_SEARCH_REGIONS.items()],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
-            )
+            ),
+            **_live_input_field(choices, live_input),
         }
     )
 
@@ -213,6 +240,30 @@ def _is_media_app(name: str, launch: str):
     return package_id in _KNOWN_PACKAGES or any(
         term in f"{name} {launch}".casefold() for term in _MEDIA_TERMS
     )
+
+
+def _tv_app_candidates(method: str, detected: list[dict], existing: list[dict]):
+    """Offer Remote app links alongside configured apps; related: app_tools.py."""
+    if method != "remote":
+        return _merge_app_lists(detected, existing) or _default_apps()
+
+    candidates = _merge_app_lists(existing, detected)
+    names = {app["name"].casefold() for app in candidates}
+    launches = {app["launch"] for app in candidates}
+    candidates.extend(
+        app for app in _REMOTE_APP_LINKS
+        if app["name"].casefold() not in names and app["launch"] not in launches
+    )
+    return candidates
+
+
+def _default_selected_apps(candidates: list[dict], settings: dict):
+    """Preserve saved choices and leave new Remote choices unchecked; related: translations/."""
+    if CONF_TV_APPS in settings:
+        return [app["launch"] for app in _apps_from_settings(settings)]
+    if settings.get(CONF_TV_METHOD) == "remote":
+        return []
+    return [app["launch"] for app in candidates]
 
 
 def _detected_tv_apps(hass, method: str, entity_id: str):
@@ -327,6 +378,7 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not valid_domain or state is None:
                 errors["base"] = "tv_entity_not_found"
             else:
+                self._input_choices = await _adb_input_choices(self.hass, entity_id) if method == "adb" else []
                 defaults.update({CONF_TV_METHOD: method, CONF_TV_ENTITY_ID: entity_id})
                 self._flow_data = defaults
                 detected = _detected_tv_apps(self.hass, method, entity_id)
@@ -335,7 +387,7 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         await _adb_tv_launchers(self.hass, entity_id), detected
                     )
                 existing = _apps_from_settings(defaults) if CONF_TV_APPS in defaults else []
-                self._app_candidates = _merge_app_lists(detected, existing) or _default_apps()
+                self._app_candidates = _tv_app_candidates(method, detected, existing)
                 return await self.async_step_apps()
         return self.async_show_form(
             step_id="tv_control", data_schema=_tv_control_schema(defaults), errors=errors
@@ -344,12 +396,7 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_apps(self, user_input=None):
         candidates = getattr(self, "_app_candidates", _default_apps())
         defaults = getattr(self, "_flow_data", {})
-        existing_apps = _apps_from_settings(defaults) if CONF_TV_APPS in defaults else []
-        default_selected = (
-            [app["launch"] for app in existing_apps]
-            if CONF_TV_APPS in defaults
-            else [app["launch"] for app in candidates]
-        )
+        default_selected = _default_selected_apps(candidates, defaults)
         errors = {}
         if user_input is not None:
             apps = _selected_apps(
@@ -375,15 +422,20 @@ class YouTubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_playback_mode(self, user_input=None):
         defaults = getattr(self, "_flow_data", {})
+        choices = getattr(self, "_input_choices", [])
         if user_input is not None:
             defaults[CONF_PLAYBACK_MODE] = _normalize_playback_mode(user_input[CONF_PLAYBACK_MODE])
             defaults[CONF_NETFLIX_SEARCH_REGION] = _normalize_netflix_region(user_input[CONF_NETFLIX_SEARCH_REGION])
+            if user_input.get(CONF_LIVE_TV_INPUT) in choices:
+                defaults[CONF_LIVE_TV_INPUT] = user_input[CONF_LIVE_TV_INPUT]
             return self.async_create_entry(title="Assist Google TV", data=defaults)
         return self.async_show_form(
             step_id="playback_mode",
             data_schema=_playback_schema(
                 defaults.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE),
                 defaults.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
+                choices,
+                defaults.get(CONF_LIVE_TV_INPUT, ""),
             ),
         )
 
@@ -429,6 +481,9 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
             if not valid_domain or self.hass.states.get(entity_id) is None:
                 errors["base"] = "tv_entity_not_found"
             else:
+                if entity_id != self._flow_data.get(CONF_TV_ENTITY_ID) and CONF_LIVE_TV_INPUT in self._flow_data:
+                    self._flow_data[CONF_LIVE_TV_INPUT] = ""
+                self._input_choices = await _adb_input_choices(self.hass, entity_id) if method == "adb" else []
                 self._flow_data.update({CONF_TV_METHOD: method, CONF_TV_ENTITY_ID: entity_id})
                 detected = _detected_tv_apps(self.hass, method, entity_id)
                 if method == "adb":
@@ -440,7 +495,7 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
                     if CONF_TV_APPS in self._flow_data
                     else []
                 )
-                self._app_candidates = _merge_app_lists(detected, existing) or _default_apps()
+                self._app_candidates = _tv_app_candidates(method, detected, existing)
                 return await self.async_step_apps()
         return self.async_show_form(
             step_id="tv_control",
@@ -450,16 +505,7 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_apps(self, user_input=None):
         candidates = getattr(self, "_app_candidates", _default_apps())
-        existing_apps = (
-            _apps_from_settings(self._flow_data)
-            if CONF_TV_APPS in self._flow_data
-            else []
-        )
-        default_selected = (
-            [app["launch"] for app in existing_apps]
-            if CONF_TV_APPS in self._flow_data
-            else [app["launch"] for app in candidates]
-        )
+        default_selected = _default_selected_apps(candidates, self._flow_data)
         errors = {}
         if user_input is not None:
             apps = _selected_apps(
@@ -483,6 +529,7 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_playback_mode(self, user_input=None):
+        choices = getattr(self, "_input_choices", [])
         if user_input is not None:
             self._flow_data[CONF_PLAYBACK_MODE] = _normalize_playback_mode(
                 user_input[CONF_PLAYBACK_MODE]
@@ -490,12 +537,16 @@ class YouTubeOptionsFlowHandler(config_entries.OptionsFlow):
             self._flow_data[CONF_NETFLIX_SEARCH_REGION] = _normalize_netflix_region(
                 user_input[CONF_NETFLIX_SEARCH_REGION]
             )
+            if user_input.get(CONF_LIVE_TV_INPUT) in choices:
+                self._flow_data[CONF_LIVE_TV_INPUT] = user_input[CONF_LIVE_TV_INPUT]
             return self.async_create_entry(title="", data=self._flow_data)
         return self.async_show_form(
             step_id="playback_mode",
             data_schema=_playback_schema(
                 self._flow_data.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE),
                 self._flow_data.get(CONF_NETFLIX_SEARCH_REGION, DEFAULT_NETFLIX_SEARCH_REGION),
+                choices,
+                self._flow_data.get(CONF_LIVE_TV_INPUT, ""),
             ),
         )
 
