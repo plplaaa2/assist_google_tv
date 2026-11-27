@@ -9,6 +9,9 @@ custom_components/assist_google_tv/THIRD_PARTY_NOTICES.md
 README.md
 README.ko.md
 CHANGELOG.md
+.github/ISSUE_TEMPLATE/01-bug.yml
+.github/ISSUE_TEMPLATE/02-feature.yml
+.github/ISSUE_TEMPLATE/config.yml
 .github/workflows/validate.yaml
 custom_components/assist_google_tv/__init__.py
 custom_components/assist_google_tv/app_tools.py
