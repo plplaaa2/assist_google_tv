@@ -12,6 +12,8 @@ Notable changes to Assist Google TV are documented here.
 - Search Netflix within a configurable region and play episodes by season, cumulative series number, or the latest episode listed.
 - Dismiss the TV screensaver before playback and configured app launches.
 - Correct Home Assistant entity IDs for saved playlists while preserving the existing playlist data.
+- Shorten Assist tool prompts and list shared Google Cast fallback targets once.
+- Add bilingual GitHub issue forms for bug reports and feature requests.
 
 ## [1.0.0] - 2026-10-26
 
